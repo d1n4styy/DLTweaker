@@ -623,13 +623,62 @@ async function loadUpdatesChangelog() {
   updatesChangelogLoading = false;
 }
 
+const TITLEBAR_MAX_SVG =
+  '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" /></svg>';
+const TITLEBAR_RESTORE_SVG =
+  '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="2.5" width="6" height="6" /><rect x="3.5" y="0.5" width="6" height="6" /></svg>';
+
+function applyNativeWindowFrameClass() {
+  try {
+    const api = window.electronAPI;
+    const ua = navigator.userAgent || '';
+    const electronWin = /\bElectron\b/i.test(ua) && /\bWindows\b/i.test(ua);
+    if ((api && api.useNativeWindowFrame) || electronWin) {
+      document.documentElement.classList.add('dl-native-win-frame');
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function syncTitlebarMaxIcon() {
+  const api = window.electronAPI;
+  const btn = document.getElementById('btn-max');
+  if (!api || typeof api.isMaximized !== 'function' || !btn) return;
+  try {
+    const maxed = await api.isMaximized();
+    btn.innerHTML = maxed ? TITLEBAR_RESTORE_SVG : TITLEBAR_MAX_SVG;
+    btn.setAttribute('aria-label', maxed ? 'Восстановить размер окна' : 'Развернуть на рабочую область');
+  } catch {
+    /* ignore */
+  }
+}
+
 function bindTitlebar() {
   const api = window.electronAPI;
   if (!api) return;
+  if (api.useNativeWindowFrame) return;
 
   document.getElementById('btn-min')?.addEventListener('click', () => api.minimize());
-  document.getElementById('btn-max')?.addEventListener('click', () => api.maximize());
+
+  const btnMax = document.getElementById('btn-max');
+  if (btnMax) {
+    btnMax.addEventListener('click', () => {
+      api.maximize();
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => void syncTitlebarMaxIcon());
+      });
+    });
+  }
+
   document.getElementById('btn-close')?.addEventListener('click', () => api.close());
+
+  void syncTitlebarMaxIcon();
+  let resizeT;
+  window.addEventListener('resize', () => {
+    window.clearTimeout(resizeT);
+    resizeT = window.setTimeout(() => void syncTitlebarMaxIcon(), 120);
+  });
 }
 
 function applyGameStatusUI(status) {
@@ -1037,6 +1086,7 @@ function bindVisualsCompareScrubber() {
 }
 
 document.getElementById('stat-updated').textContent = formatNow();
+applyNativeWindowFrameClass();
 initTheme();
 bindThemeToggle();
 bindRangeRows();
