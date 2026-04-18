@@ -6,6 +6,7 @@
  * — `application-main.js`: главное окно, профили, IPC интерфейса.
  */
 const startupTrace = require('./startup-trace');
+const instanceLock = require('./electron-instance-lock');
 startupTrace.trace('main.js: bootstrap');
 
 const { app, BrowserWindow, Menu } = require('electron');
@@ -29,16 +30,16 @@ applicationMain.init({
   sanitizeNetworkErrorMessage: updaterSplash.sanitizeNetworkErrorMessage,
 });
 
-if (!app.requestSingleInstanceLock()) {
+if (!instanceLock.requestSingleInstanceWithReplace(app)) {
   startupTrace.trace(
-    'main: single-instance lock NOT acquired — exit (второй запуск или «зависший» процесс). Лог: ' + startupTrace.traceFile(),
+    'main: single-instance lock NOT acquired после попытки замены. Лог: ' + startupTrace.traceFile(),
   );
   try {
     const { dialog } = require('electron');
     dialog.showErrorBox(
       'Deadlock Tweaker',
-      'Экземпляр уже запущен (или остался «зависший» процесс в фоне).\n\n' +
-        'Проверьте панель задач и Диспетчер задач: завершите «Deadlock Tweaker» / electron.exe, затем запустите снова.\n\n' +
+      'Не удалось занять единственный экземпляр (после попытки завершить предыдущий процесс).\n\n' +
+        'Закройте приложение вручную в Диспетчере задач и повторите запуск.\n\n' +
         'Диагностика: ' +
         startupTrace.traceFile(),
     );
@@ -48,8 +49,13 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   startupTrace.trace('main: single-instance lock OK');
+  instanceLock.writeMainPidFile();
   app.on('second-instance', () => {
     updaterSplash.focusExistingWindow();
+  });
+
+  app.on('will-quit', () => {
+    instanceLock.clearMainPidFile();
   });
 
   app

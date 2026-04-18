@@ -1,6 +1,6 @@
 {
   "name": "deadlock-tweaker",
-  "version": "1.0.29",
+  "version": "1.0.30",
   "description": "Deadlock Tweaker — Electron UI",
   "author": "DLTweaker",
   "main": "main.js",
@@ -37,6 +37,7 @@
     "files": [
     "main.js",
     "startup-trace.js",
+    "electron-instance-lock.js",
     "electron-app-state.js",
       "electron-utils.js",
       "updater-splash.js",
