@@ -54,7 +54,7 @@
         checking: 'Подключение к серверу обновлений',
         available: 'Скоро начнётся загрузка',
         downloading: 'Не закрывайте это окно',
-        installing: 'Тихий режим: отдельное окно мастера не показывается',
+        installing: 'Установка обновления…',
         uptodate: 'Переход к основному окну',
         launching: 'Почти готово',
         offline: 'Обновления недоступны, открываем приложение',
@@ -77,7 +77,7 @@
         payload.downloadedTotal != null &&
         Number(payload.downloadedTotal) > 0
       ) {
-        extra = `Загружено ${formatBytes(payload.downloadedTotal)} · установка без окна мастера`;
+        extra = `Загружено ${formatBytes(payload.downloadedTotal)}`;
       }
       let subText = extra || hints[payload.phase] || '';
       if (payload.detail && String(payload.detail).trim()) {

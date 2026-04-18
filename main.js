@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { autoUpdater } = require('electron-updater');
+const { applyQuickPatch, readOverlayCss } = require('./quick-patch');
 
 const execFileAsync = promisify(execFile);
 
@@ -93,13 +94,28 @@ const GH_UPDATES_OWNER = 'd1n4styy';
 const GH_UPDATES_REPO = 'DLTweaker';
 const GH_RELEASES_API = `https://api.github.com/repos/${GH_UPDATES_OWNER}/${GH_UPDATES_REPO}/releases?per_page=12`;
 
-/** Same as first `publish` entry in package.json — works for any installed version (incl. 1.0.x). */
+/** Optional local blurbs when GitHub `body` is empty (electron-builder often publishes without notes). */
+let cachedBundledReleaseNotes = undefined;
+
+async function getBundledReleaseNotesMap() {
+  if (cachedBundledReleaseNotes !== undefined) return cachedBundledReleaseNotes;
+  try {
+    const raw = await fs.readFile(path.join(__dirname, 'release-notes.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    cachedBundledReleaseNotes = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    cachedBundledReleaseNotes = {};
+  }
+  return cachedBundledReleaseNotes;
+}
+
+/** Generic `latest/download` — fallback если GitHub API/провайдер недоступен. */
 const GENERIC_UPDATE_FEED_BASE = 'https://github.com/d1n4styy/DLTweaker/releases/latest/download/';
 
 /**
- * Default packaged feed: **generic** `latest/download` (reliable with embedded `app-update.yml` and older builds).
- * Optional: `DLTWEAKER_USE_GITHUB_UPDATER=1` uses GitHub provider (better for blockmap deltas when it works).
- * Custom host: `DLTWEAKER_UPDATE_URL` (HTTPS base with trailing slash, `latest.yml` at root).
+ * Сборка: первым в `publish` указан GitHub — дифференциальная загрузка по blockmap (не весь exe, если возможно).
+ * Принудительно только generic: `DLTWEAKER_USE_GENERIC_UPDATER=1`.
+ * Свой хост: `DLTWEAKER_UPDATE_URL` (HTTPS, `latest.yml` в корне).
  */
 function configureAutoUpdaterFeed() {
   const raw = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
@@ -113,36 +129,32 @@ function configureAutoUpdaterFeed() {
   }
   if (!app.isPackaged) return;
   try {
-    if ((process.env.DLTWEAKER_USE_GITHUB_UPDATER || '').trim() === '1') {
-      autoUpdater.setFeedURL({ provider: 'github', owner: GH_UPDATES_OWNER, repo: GH_UPDATES_REPO });
-    } else {
+    if ((process.env.DLTWEAKER_USE_GENERIC_UPDATER || '').trim() === '1') {
       autoUpdater.setFeedURL({ provider: 'generic', url: GENERIC_UPDATE_FEED_BASE });
+    } else {
+      autoUpdater.setFeedURL({ provider: 'github', owner: GH_UPDATES_OWNER, repo: GH_UPDATES_REPO });
     }
   } catch {
     /* keep embedded app-update.yml from electron-builder */
   }
 }
 
-function configureAutoUpdaterFeedGithubFallback() {
-  try {
-    autoUpdater.setFeedURL({ provider: 'github', owner: GH_UPDATES_OWNER, repo: GH_UPDATES_REPO });
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Generic `latest.yml` first (stable for old installs); on failure try GitHub provider once. */
+/** Сначала GitHub (дельты), при ошибке — generic latest/download. */
 async function checkForUpdatesWithFeedFallback() {
   const customUrl = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
   if (customUrl || !app.isPackaged) {
     return await autoUpdater.checkForUpdates();
   }
+  const preferGeneric = (process.env.DLTWEAKER_USE_GENERIC_UPDATER || '').trim() === '1';
+  configureAutoUpdaterFeed();
+  applyAutoUpdaterDefaults();
   try {
     return await autoUpdater.checkForUpdates();
   } catch (firstErr) {
-    configureAutoUpdaterFeedGithubFallback();
-    applyAutoUpdaterDefaults();
+    if (preferGeneric) throw firstErr;
     try {
+      autoUpdater.setFeedURL({ provider: 'generic', url: GENERIC_UPDATE_FEED_BASE });
+      applyAutoUpdaterDefaults();
       return await autoUpdater.checkForUpdates();
     } catch {
       throw firstErr;
@@ -214,6 +226,13 @@ function createMainWindow() {
     }
   });
   mainWin.loadFile('index.html');
+  mainWin.webContents.once('did-finish-load', () => {
+    void applyQuickPatch(app, { silent: true }).then((r) => {
+      if (r && r.ok && r.code === 'applied' && mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('quick-patch-updated');
+      }
+    });
+  });
   mainWin.on('closed', () => {
     mainWin = null;
   });
@@ -470,6 +489,13 @@ ipcMain.handle('game-process-status', async () => getDeadlockRunningStatus());
 
 ipcMain.handle('app-get-version', () => app.getVersion());
 
+ipcMain.handle('quick-patch-apply', async () => applyQuickPatch(app, { silent: false }));
+
+ipcMain.handle('quick-patch-get-css', async () => {
+  const css = await readOverlayCss(app);
+  return css || '';
+});
+
 ipcMain.handle('open-external-url', async (_e, href) => {
   const s = typeof href === 'string' ? href.trim() : '';
   if (!/^https:\/\/github\.com\/d1n4styy\/DLTweaker\//i.test(s)) {
@@ -499,13 +525,23 @@ ipcMain.handle('updates-release-notes', async () => {
     if (!Array.isArray(data)) {
       return { ok: false, message: 'Неожиданный ответ API' };
     }
-    const items = data.map((r) => ({
-      tag: r.tag_name != null ? String(r.tag_name) : '',
-      name: r.name != null ? String(r.name) : '',
-      publishedAt: r.published_at != null ? String(r.published_at) : '',
-      body: typeof r.body === 'string' ? r.body.trim() : '',
-      url: typeof r.html_url === 'string' ? r.html_url : '',
-    }));
+    const bundled = await getBundledReleaseNotesMap();
+    const items = data.map((r) => {
+      const tag = r.tag_name != null ? String(r.tag_name) : '';
+      const apiBody = typeof r.body === 'string' ? r.body.trim() : '';
+      let fromBundle = '';
+      if (tag && bundled[tag] != null) {
+        fromBundle = String(bundled[tag]).trim();
+      }
+      const body = apiBody || fromBundle;
+      return {
+        tag,
+        name: r.name != null ? String(r.name) : '',
+        publishedAt: r.published_at != null ? String(r.published_at) : '',
+        body,
+        url: typeof r.html_url === 'string' ? r.html_url : '',
+      };
+    });
     return { ok: true, items };
   } catch (err) {
     const message = err && err.message ? String(err.message) : 'Запрос не выполнен';
@@ -513,41 +549,43 @@ ipcMain.handle('updates-release-notes', async () => {
   }
 });
 
-ipcMain.handle('updates-check-manual', async (event) => {
-  if (!app.isPackaged) {
-    const envUrl = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
-    let hasDevYml = false;
-    try {
-      await fs.access(path.join(__dirname, 'dev-app-update.yml'));
-      hasDevYml = true;
-    } catch {
-      /* no dev feed */
-    }
-    if (!envUrl && !hasDevYml) {
-      return {
-        ok: false,
-        code: 'dev',
-        message:
-          'Для проверки в dev задайте DLTWEAKER_UPDATE_URL или скопируйте dev-app-update.example.yml → dev-app-update.yml.',
-      };
-    }
-    autoUpdater.forceDevUpdateConfig = true;
+async function manualUpdaterDevGate() {
+  if (app.isPackaged) return null;
+  const envUrl = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
+  let hasDevYml = false;
+  try {
+    await fs.access(path.join(__dirname, 'dev-app-update.yml'));
+    hasDevYml = true;
+  } catch {
+    /* no dev feed */
   }
+  if (!envUrl && !hasDevYml) {
+    return {
+      ok: false,
+      code: 'dev',
+      message:
+        'Для проверки в dev задайте DLTWEAKER_UPDATE_URL или скопируйте dev-app-update.example.yml → dev-app-update.yml.',
+    };
+  }
+  autoUpdater.forceDevUpdateConfig = true;
+  return null;
+}
+
+const NO_UPDATE_CHANNEL_MSG =
+  'Канал обновлений не настроен. Проверьте publish в package.json или DLTWEAKER_UPDATE_URL / dev-app-update.yml.';
+
+/** Только проверка версии (без загрузки установщика). */
+ipcMain.handle('updates-check-only', async () => {
+  const gate = await manualUpdaterDevGate();
+  if (gate) return gate;
   configureAutoUpdaterFeed();
   applyAutoUpdaterDefaults();
-
-  const win = BrowserWindow.fromWebContents(event.sender);
-  const parent = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
-
+  const prevAuto = autoUpdater.autoDownload;
+  autoUpdater.autoDownload = false;
   try {
     const result = await checkForUpdatesWithFeedFallback();
     if (result == null) {
-      return {
-        ok: false,
-        code: 'noconfig',
-        message:
-          'Канал обновлений не настроен. Проверьте publish в package.json или DLTWEAKER_UPDATE_URL / dev-app-update.yml.',
-      };
+      return { ok: false, code: 'noconfig', message: NO_UPDATE_CHANNEL_MSG };
     }
     if (!result.isUpdateAvailable) {
       return {
@@ -557,9 +595,58 @@ ipcMain.handle('updates-check-manual', async (event) => {
         remoteVersion: result.updateInfo?.version,
       };
     }
-    if (result.downloadPromise) {
-      await result.downloadPromise;
+    return {
+      ok: true,
+      code: 'available',
+      currentVersion: app.getVersion(),
+      version: result.updateInfo.version,
+    };
+  } catch (err) {
+    const msg = err && err.message ? String(err.message) : 'Проверка не удалась';
+    return { ok: false, code: 'error', message: msg };
+  } finally {
+    autoUpdater.autoDownload = prevAuto;
+  }
+});
+
+/** Проверка + явная загрузка + диалог перезапуска (кнопка «Скачать обновление»). */
+ipcMain.handle('updates-download-install', async (event) => {
+  const gate = await manualUpdaterDevGate();
+  if (gate) return gate;
+  configureAutoUpdaterFeed();
+  applyAutoUpdaterDefaults();
+
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const parent = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
+  const prevAuto = autoUpdater.autoDownload;
+  autoUpdater.autoDownload = false;
+
+  const forwardProgress = (p) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('settings-update-download-progress', {
+        percent: p.percent,
+        transferred: p.transferred,
+        total: p.total,
+      });
     }
+  };
+  autoUpdater.on('download-progress', forwardProgress);
+
+  try {
+    const result = await checkForUpdatesWithFeedFallback();
+    if (result == null) {
+      return { ok: false, code: 'noconfig', message: NO_UPDATE_CHANNEL_MSG };
+    }
+    if (!result.isUpdateAvailable) {
+      return {
+        ok: true,
+        code: 'uptodate',
+        currentVersion: app.getVersion(),
+        remoteVersion: result.updateInfo?.version,
+      };
+    }
+    await autoUpdater.downloadUpdate();
+
     const choice = await dialog.showMessageBox(parent || undefined, {
       type: 'info',
       buttons: ['Перезапустить сейчас', 'Позже'],
@@ -585,7 +672,10 @@ ipcMain.handle('updates-check-manual', async (event) => {
       message: 'Обновление скачано и установится при выходе из приложения.',
     };
   } catch (err) {
-    const msg = err && err.message ? String(err.message) : 'Проверка не удалась';
+    const msg = err && err.message ? String(err.message) : 'Загрузка не удалась';
     return { ok: false, code: 'error', message: msg };
+  } finally {
+    autoUpdater.removeListener('download-progress', forwardProgress);
+    autoUpdater.autoDownload = prevAuto;
   }
 });

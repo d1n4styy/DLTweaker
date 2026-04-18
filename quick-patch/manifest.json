@@ -1,0 +1,13 @@
+{
+  "id": "qp-1.0.8-1",
+  "minAppSemver": "1.0.8",
+  "maxAppSemver": "99.99.99",
+  "description": "Малые правки (CSS/текст) без полного установщика. Полный NSIS нужен при смене Electron или main/preload.",
+  "assets": [
+    {
+      "path": "overlay.css",
+      "url": "https://raw.githubusercontent.com/d1n4styy/DLTweaker/main/quick-patch/overlay.css",
+      "sha256": "ad8d73d910dc7c2329db63ccd46e7ab86ca8a55277d80fbfba7008570e606e00"
+    }
+  ]
+}

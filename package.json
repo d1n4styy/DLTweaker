@@ -1,6 +1,6 @@
 {
   "name": "deadlock-tweaker",
-  "version": "1.0.6",
+  "version": "1.0.8",
   "description": "Deadlock Tweaker — Electron UI",
   "author": "DLTweaker",
   "main": "main.js",
@@ -33,6 +33,7 @@
     "asar": true,
     "files": [
       "main.js",
+      "quick-patch.js",
       "preload.js",
       "index.html",
       "styles.css",
@@ -41,6 +42,7 @@
       "splash.css",
       "splash-renderer.js",
       "splash-preload.js",
+      "release-notes.json",
       "assets/**/*",
       "Screens/**/*"
     ],
@@ -61,12 +63,12 @@
     },
     "publish": [
       {
-        "provider": "generic",
-        "url": "https://github.com/d1n4styy/DLTweaker/releases/latest/download/"
-      },
-      {
         "provider": "github",
         "releaseType": "release"
+      },
+      {
+        "provider": "generic",
+        "url": "https://github.com/d1n4styy/DLTweaker/releases/latest/download/"
       }
     ]
   },

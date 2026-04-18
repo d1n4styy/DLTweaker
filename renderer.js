@@ -527,6 +527,20 @@ function formatReleaseDateRu(iso) {
   }
 }
 
+/** GitHub release bodies are Markdown; keep readable plain text in UI. */
+function simplifyReleaseBody(raw) {
+  if (raw == null) return '';
+  let s = String(raw).replace(/\r\n/g, '\n');
+  s = s.replace(/^---[\s\S]*?^---\s*/m, '');
+  s = s.replace(/^#{1,6}\s+/gm, '');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '$1');
+  s = s.replace(/\*([^*]+)\*/g, '$1');
+  s = s.replace(/`([^`]+)`/g, '$1');
+  s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  s = s.replace(/^\s*[-*]\s+/gm, '• ');
+  return s.trim();
+}
+
 async function loadUpdatesChangelog() {
   const listEl = document.getElementById('updates-changelog-list');
   const statusEl = document.getElementById('updates-changelog-status');
@@ -578,8 +592,8 @@ async function loadUpdatesChangelog() {
 
       const body = document.createElement('p');
       body.className = 'updates-changelog-body';
-      const btxt = it.body && String(it.body).trim();
-      body.textContent = btxt || '—';
+      const btxt = simplifyReleaseBody(it.body);
+      body.textContent = btxt || 'Нет описания для этого релиза.';
 
       article.append(head, body);
 
@@ -792,9 +806,78 @@ async function initVisualsCompareAsset() {
   applySrcsetIfHiDpi(root.querySelector('.visuals-scrub__top'));
 }
 
+async function refreshQuickPatchCss() {
+  const api = window.electronAPI;
+  if (!api || typeof api.quickPatchGetCss !== 'function') return;
+  try {
+    const css = await api.quickPatchGetCss();
+    const existing = document.getElementById('dl-quick-patch-css');
+    if (!css) {
+      if (existing) existing.remove();
+      return;
+    }
+    const el = existing || document.createElement('style');
+    if (!existing) {
+      el.id = 'dl-quick-patch-css';
+      document.head.appendChild(el);
+    }
+    el.textContent = css;
+  } catch {
+    /* ignore */
+  }
+}
+
+async function initQuickPatchStyles() {
+  await refreshQuickPatchCss();
+  const api = window.electronAPI;
+  if (api && typeof api.onQuickPatchUpdated === 'function') {
+    api.onQuickPatchUpdated(() => void refreshQuickPatchCss());
+  }
+}
+
+function bindSettingsQuickPatch() {
+  const btn = document.getElementById('settings-quickpatch-btn');
+  const st = document.getElementById('settings-quickpatch-status');
+  const api = window.electronAPI;
+  if (!btn || !st || !api || typeof api.quickPatchApply !== 'function') return;
+
+  function setSt(text, err) {
+    st.textContent = text;
+    st.className = 'settings-quickpatch-status' + (err ? ' is-error' : '');
+  }
+
+  btn.addEventListener('click', async () => {
+    setSt('Проверка…', false);
+    btn.disabled = true;
+    try {
+      const r = await api.quickPatchApply();
+      if (!r || !r.ok) {
+        setSt(r?.message || 'Не удалось', true);
+      } else if (r.code === 'applied') {
+        setSt(r.message || 'Патч применён', false);
+        await refreshQuickPatchCss();
+      } else if (r.code === 'uptodate') {
+        setSt(r.message || 'Уже актуально', false);
+      } else if (r.code === 'noop') {
+        setSt(r.message || 'Нет файлов в манифесте', false);
+      } else if (r.code === 'range') {
+        setSt(r.message || 'Не для этой версии', false);
+      } else if (r.code === 'fetch') {
+        setSt(r.message || 'Нет связи с манифестом', true);
+      } else {
+        setSt(r.message || 'Готово', false);
+      }
+    } catch (e) {
+      setSt(e && e.message ? String(e.message) : 'Ошибка', true);
+    }
+    btn.disabled = false;
+  });
+}
+
 function bindSettingsUpdates() {
   const verEl = document.getElementById('settings-app-version');
-  const btn = document.getElementById('settings-check-updates');
+  const btnCheck = document.getElementById('settings-check-updates');
+  const btnDl = document.getElementById('settings-download-updates');
   const msg = document.getElementById('settings-update-msg');
   const api = window.electronAPI;
   if (!verEl || !api || typeof api.getAppVersion !== 'function') return;
@@ -808,37 +891,99 @@ function bindSettingsUpdates() {
     },
   );
 
-  if (!btn || !msg || typeof api.checkForUpdatesManual !== 'function') return;
+  if (!btnCheck || !btnDl || !msg) return;
+  if (typeof api.checkUpdatesOnly !== 'function' || typeof api.downloadUpdatesInstall !== 'function') return;
 
-  btn.addEventListener('click', async () => {
-    msg.textContent = 'Проверка…';
+  /** @type {null | (() => void)} */
+  let unsubProgress = null;
+
+  function clearProgress() {
+    if (typeof unsubProgress === 'function') {
+      unsubProgress();
+      unsubProgress = null;
+    }
+  }
+
+  function setMsg(text, tone) {
+    msg.textContent = text;
     msg.className = 'settings-update-msg';
-    btn.disabled = true;
+    if (tone === 'ok') msg.classList.add('is-ok');
+    else if (tone === 'warn') msg.classList.add('is-warn');
+    else if (tone === 'err') msg.classList.add('is-error');
+  }
+
+  btnCheck.addEventListener('click', async () => {
+    clearProgress();
+    setMsg('Проверка…', '');
+    btnCheck.disabled = true;
+    btnDl.disabled = true;
     try {
-      const r = await api.checkForUpdatesManual();
+      const r = await api.checkUpdatesOnly();
       if (!r || !r.ok) {
-        msg.classList.add('is-error');
-        msg.textContent = r?.message || 'Не удалось проверить обновления';
+        setMsg(r?.message || 'Не удалось проверить обновления', 'err');
+        btnDl.disabled = true;
       } else if (r.code === 'uptodate') {
-        msg.classList.add('is-ok');
-        msg.textContent = `Установлена последняя версия (${r.currentVersion || 'текущая'}).`;
+        setMsg(`Установлена последняя версия (${r.currentVersion || 'текущая'}).`, 'ok');
+        btnDl.disabled = true;
+      } else if (r.code === 'available') {
+        setMsg(`Доступна версия ${r.version}. Нажмите «Скачать обновление».`, 'ok');
+        btnDl.disabled = false;
       } else if (r.code === 'dev') {
-        msg.classList.add('is-warn');
-        msg.textContent = r.message || 'Режим разработки';
-      } else if (r.code === 'restarting') {
-        msg.classList.add('is-ok');
-        msg.textContent = 'Перезапуск для установки…';
-      } else if (r.code === 'downloaded') {
-        msg.classList.add('is-ok');
-        msg.textContent = r.message || 'Обновление скачано.';
+        setMsg(r.message || 'Режим разработки', 'warn');
+        btnDl.disabled = true;
+      } else if (r.code === 'noconfig') {
+        setMsg(r.message || 'Канал обновлений не настроен', 'err');
+        btnDl.disabled = true;
       } else {
-        msg.textContent = r.message || 'Готово';
+        setMsg(r.message || 'Готово', '');
+        btnDl.disabled = true;
       }
     } catch (e) {
-      msg.classList.add('is-error');
-      msg.textContent = e && e.message ? String(e.message) : 'Ошибка';
+      setMsg(e && e.message ? String(e.message) : 'Ошибка', 'err');
+      btnDl.disabled = true;
     }
-    btn.disabled = false;
+    btnCheck.disabled = false;
+  });
+
+  btnDl.addEventListener('click', async () => {
+    clearProgress();
+    setMsg('Загрузка…', '');
+    btnDl.disabled = true;
+    btnCheck.disabled = true;
+    if (typeof api.onSettingsUpdateDownloadProgress === 'function') {
+      unsubProgress = api.onSettingsUpdateDownloadProgress((p) => {
+        const pct = Math.round(Number(p && p.percent) || 0);
+        setMsg(`Загрузка ${pct}%`, '');
+      });
+    }
+    try {
+      const r = await api.downloadUpdatesInstall();
+      if (!r || !r.ok) {
+        setMsg(r?.message || 'Не удалось скачать обновление', 'err');
+        btnDl.disabled = false;
+      } else if (r.code === 'uptodate') {
+        setMsg(`Установлена последняя версия (${r.currentVersion || 'текущая'}).`, 'ok');
+        btnDl.disabled = true;
+      } else if (r.code === 'restarting') {
+        setMsg('Перезапуск для установки…', 'ok');
+        btnDl.disabled = true;
+      } else if (r.code === 'downloaded') {
+        setMsg(r.message || 'Обновление скачано.', 'ok');
+        btnDl.disabled = true;
+      } else if (r.code === 'dev') {
+        setMsg(r.message || 'Режим разработки', 'warn');
+        btnDl.disabled = true;
+      } else {
+        setMsg(r.message || 'Готово', '');
+        btnDl.disabled = true;
+      }
+    } catch (e) {
+      setMsg(e && e.message ? String(e.message) : 'Ошибка', 'err');
+      btnDl.disabled = false;
+    } finally {
+      clearProgress();
+      btnCheck.disabled = false;
+    }
   });
 }
 
@@ -899,6 +1044,8 @@ bindNav();
 bindTitlebar();
 initVisualsCompareAsset();
 bindVisualsCompareScrubber();
+void initQuickPatchStyles();
+bindSettingsQuickPatch();
 bindSettingsUpdates();
 startGameStatusPolling();
 

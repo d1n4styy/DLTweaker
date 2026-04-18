@@ -33,30 +33,49 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: flex-start;
-  padding: 0;
+  justify-content: stretch;
+  padding: 20px 28px 10px;
   background: radial-gradient(420px 220px at 50% 0%, rgba(162, 255, 0, 0.07), transparent 60%), var(--bg);
   border: 1px solid var(--card-border);
   border-radius: var(--radius);
   margin: 0;
 }
 
-.splash-hero {
+.splash-inner {
   width: 100%;
-  flex: 0 0 auto;
+  max-width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: center;
+}
+
+.splash-hero {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 14px 16px 12px;
-  border-bottom: 1px solid var(--card-border);
-  background: linear-gradient(180deg, rgba(162, 255, 0, 0.04), transparent 85%);
+}
+
+.splash-foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding-bottom: 2px;
+  margin-top: 4px;
 }
 
 .splash-logo {
   display: block;
-  width: 100%;
+  width: min(100%, 420px);
   height: auto;
-  max-height: min(160px, 38vh);
+  max-height: min(220px, 52vh);
+  margin: 0;
   object-fit: contain;
   object-position: center;
   filter: drop-shadow(0 0 10px rgba(162, 255, 0, 0.14)) drop-shadow(0 0 22px rgba(162, 255, 0, 0.06));
@@ -81,19 +100,8 @@ body {
   }
 }
 
-.splash-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 18px 24px 22px;
-  text-align: center;
-}
-
 .status-line {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   font-size: 13px;
   color: var(--text);
   text-align: center;
@@ -102,7 +110,7 @@ body {
 }
 
 .status-sub {
-  margin: 0 0 16px;
+  margin: 0 0 8px;
   font-size: 12px;
   line-height: 1.4;
   color: var(--muted);
@@ -110,12 +118,13 @@ body {
   min-height: 1.25em;
   max-width: 100%;
   word-break: break-word;
+  white-space: pre-line;
 }
 
 .progress-wrap {
   width: 100%;
-  max-width: 300px;
-  margin-top: 4px;
+  max-width: min(100%, 340px);
+  margin-top: 2px;
 }
 
 .progress {
@@ -163,7 +172,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .spinner {

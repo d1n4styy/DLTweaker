@@ -436,29 +436,43 @@
             <div class="main-header">
               <div>
                 <h1>Обновления</h1>
-                <p class="sub">Проверка версии, дельта-загрузка мелких патчей и журнал релизов с GitHub.</p>
+                <p class="sub">Версия, проверка канала и список изменений.</p>
               </div>
             </div>
             <div class="settings-layout">
-              <article class="card settings-updates-card">
-                <h2 class="card-title">Канал обновлений</h2>
-                <p class="settings-delta-hint">
-                  При небольших патчах загружается в основном <strong>разница</strong> к установщику (blockmap), а не весь файл — если в кеше есть копия текущего установщика
-                  (<code>installer.exe</code> в каталоге обновлений Windows). После первой полной загрузки следующие обычно заметно меньше.
-                </p>
-                <p class="settings-version">
-                  <span class="settings-version-label">Текущая версия</span>
-                  <strong id="settings-app-version">—</strong>
-                </p>
-                <button type="button" class="btn" id="settings-check-updates">Проверить обновления</button>
-                <p class="settings-update-msg" id="settings-update-msg" role="status" aria-live="polite"></p>
-              </article>
-              <article class="card updates-changelog-card">
-                <h2 class="card-title">Последние версии</h2>
-                <p class="updates-changelog-intro">Описания из GitHub Releases (новые сверху).</p>
-                <div class="updates-changelog-list" id="updates-changelog-list" role="list"></div>
-                <p class="updates-changelog-foot" id="updates-changelog-status" aria-live="polite"></p>
-              </article>
+              <div class="settings-col-left">
+                <article class="card settings-updates-card">
+                  <div class="settings-update-kicker" title="Сверка версии с каналом обновлений">
+                    <span class="settings-update-kicker-glow" aria-hidden="true"></span>
+                    <span class="settings-update-kicker-text">Проверка канала</span>
+                  </div>
+                  <p class="settings-version">
+                    <span class="settings-version-label">Текущая версия</span>
+                    <strong id="settings-app-version">—</strong>
+                  </p>
+                  <div class="settings-update-actions">
+                    <button type="button" class="btn btn-ghost" id="settings-check-updates">Проверить</button>
+                    <button type="button" class="btn" id="settings-download-updates" disabled>Скачать обновление</button>
+                  </div>
+                  <p class="settings-update-msg" id="settings-update-msg" role="status" aria-live="polite"></p>
+                  <div class="settings-quickpatch" aria-labelledby="settings-quickpatch-label">
+                    <div class="settings-quickpatch-head" id="settings-quickpatch-label">Быстрые патчи</div>
+                    <p class="settings-quickpatch-desc">
+                      Мелкие правки (CSS и др.) с репозитория — килобайты вместо полного установщика. Смена логики окна или версии Electron — только полный NSIS.
+                    </p>
+                    <button type="button" class="btn btn-ghost btn-sm" id="settings-quickpatch-btn">Проверить патч</button>
+                    <p class="settings-quickpatch-status" id="settings-quickpatch-status" role="status" aria-live="polite"></p>
+                  </div>
+                </article>
+              </div>
+              <div class="settings-col-right">
+                <article class="card updates-changelog-card">
+                  <h2 class="card-title">Что нового</h2>
+                  <p class="updates-changelog-intro">GitHub + локальные заметки к тегам, если в релизе нет текста.</p>
+                  <div class="updates-changelog-list" id="updates-changelog-list" role="list"></div>
+                  <p class="updates-changelog-foot" id="updates-changelog-status" aria-live="polite"></p>
+                </article>
+              </div>
             </div>
           </section>
         </main>

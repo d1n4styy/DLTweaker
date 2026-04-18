@@ -1,4 +1,4 @@
 # Copy to dev-app-update.yml (gitignored) to test electron-updater from `npm run dev`.
-# Packaged app uses GitHub generic: .../releases/latest/download/ (see main.js DEFAULT_UPDATE_FEED_BASE).
+# В сборке по умолчанию — GitHub (дельты по blockmap), fallback generic. Только generic: DLTWEAKER_USE_GENERIC_UPDATER=1.
 provider: generic
 url: https://github.com/d1n4styy/DLTweaker/releases/latest/download/
