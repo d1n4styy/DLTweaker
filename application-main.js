@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme } = require('electron');
 const { applyQuickPatch, checkQuickPatchOnly, readOverlayCss } = require('./quick-patch');
 const startupTrace = require('./startup-trace');
 
@@ -104,6 +104,11 @@ function setupMainWindowSizing(win) {
 
 function createMainWindow() {
   startupTrace.trace('mainWin: createMainWindow enter');
+  try {
+    nativeTheme.themeSource = 'dark';
+  } catch {
+    /* ignore */
+  }
   if (state.splashUserAborted) return;
   if (state.mainWin && !state.mainWin.isDestroyed()) {
     if (state.splashWin && !state.splashWin.isDestroyed()) splashApi.closeSplashProgrammatically();
@@ -128,6 +133,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      paintWhenInitiallyHidden: true,
     },
   });
   try {

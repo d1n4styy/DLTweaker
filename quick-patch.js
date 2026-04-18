@@ -91,6 +91,8 @@ async function fetchJson(url, timeoutMs) {
       headers: {
         Accept: 'application/json',
         'User-Agent': 'DeadlockTweaker/quick-patch',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
       },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -116,7 +118,11 @@ async function fetchAsset(url, maxBytes) {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'DeadlockTweaker/quick-patch' },
+      headers: {
+        'User-Agent': 'DeadlockTweaker/quick-patch',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const len = Number(res.headers.get('content-length'));

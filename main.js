@@ -9,7 +9,7 @@ const startupTrace = require('./startup-trace');
 const instanceLock = require('./electron-instance-lock');
 startupTrace.trace('main.js: bootstrap');
 
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, nativeTheme } = require('electron');
 const state = require('./electron-app-state');
 const updaterSplash = require('./updater-splash');
 const applicationMain = require('./application-main');
@@ -62,6 +62,11 @@ if (!instanceLock.requestSingleInstanceWithReplace(app)) {
     .whenReady()
     .then(() => {
       startupTrace.trace('main: app.whenReady');
+      try {
+        nativeTheme.themeSource = 'dark';
+      } catch {
+        /* ignore */
+      }
       try {
         if (process.platform !== 'darwin' && typeof app.setQuitOnLastWindowClosed === 'function') {
           app.setQuitOnLastWindowClosed(true);

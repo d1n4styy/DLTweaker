@@ -163,6 +163,8 @@ function applyAutoUpdaterDefaults() {
       ...autoUpdater.requestHeaders,
       'User-Agent': `DeadlockTweaker/${v} (${process.platform})`,
       Accept: '*/*',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
     };
   } catch {
     /* ignore */
@@ -219,7 +221,7 @@ function createSplashWindow() {
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    show: true,
+    show: false,
     center: true,
     alwaysOnTop: true,
     icon: path.join(__dirname, 'assets', 'logo.png'),
@@ -230,11 +232,12 @@ function createSplashWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      paintWhenInitiallyHidden: true,
     },
   });
   state.splashWin = win;
   const splashRef = win;
-  startupTrace.trace('splash: BrowserWindow created (show=true)');
+  startupTrace.trace('splash: BrowserWindow created (show=false, anti-flash)');
 
   win.on('closed', () => {
     if (state.splashWin === splashRef) state.splashWin = null;
