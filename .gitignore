@@ -1,6 +1,7 @@
 node_modules/
 out/
 dist/
+DLTweaker-full-snapshot/
 *.log
 dev-app-update.yml
 .electron-builder-itch.json
