@@ -439,25 +439,12 @@
             <div class="main-header">
               <div>
                 <h1>Settings</h1>
-                <p class="sub">Поведение приложения и обновления.</p>
+                <p class="sub">Параметры приложения.</p>
               </div>
             </div>
             <div class="settings-layout">
               <article class="card settings-updates-card">
                 <h2 class="card-title">Обновления</h2>
-                <p class="settings-hint">
-                  Обновления через <strong>GitHub Releases</strong> (встроенный канал
-                  <code class="settings-code">electron-updater</code>): в <code class="settings-code">package.json</code> укажите свой репозиторий в
-                  <code class="settings-code">repository.url</code> (логин и имя репо совпадают с тем, куда публикуете релизы), оставьте
-                  <code class="settings-code">"publish": ["github"]</code>. Релиз:
-                  <code class="settings-code">GH_TOKEN</code> с правом <code class="settings-code">repo</code>, затем
-                  <code class="settings-code">npm run dist:publish</code> или тег <code class="settings-code">v*</code> и workflow в
-                  <code class="settings-code">.github/workflows/release.yml</code>. Переопределение: переменная
-                  <code class="settings-code">DLTWEAKER_UPDATE_URL</code> (generic, корень с <code class="settings-code">latest.yml</code>) — например для
-                  itch.io: <code class="settings-code">npm run dist:itch</code>. В dev проверка только при
-                  <code class="settings-code">DLTWEAKER_UPDATE_URL</code> или <code class="settings-code">dev-app-update.yml</code> (см.
-                  <code class="settings-code">dev-app-update.example.yml</code>).
-                </p>
                 <p class="settings-version">
                   <span class="settings-version-label">Текущая версия</span>
                   <strong id="settings-app-version">—</strong>

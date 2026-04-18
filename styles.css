@@ -1215,22 +1215,6 @@ input[type='range'].range::-moz-range-track {
   max-width: 720px;
 }
 
-.settings-hint {
-  margin: 0 0 16px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--muted);
-}
-
-.settings-code {
-  font-size: 12px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--card-hover);
-  border: 1px solid var(--card-border);
-  white-space: nowrap;
-}
-
 .settings-version {
   margin: 0 0 18px;
   font-size: 14px;
