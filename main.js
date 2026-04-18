@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { autoUpdater } = require('electron-updater');
-const { applyQuickPatch, readOverlayCss } = require('./quick-patch');
+const { applyQuickPatch, checkQuickPatchOnly, readOverlayCss } = require('./quick-patch');
 
 const execFileAsync = promisify(execFile);
 
@@ -112,6 +112,53 @@ const GH_UPDATES_OWNER = 'd1n4styy';
 const GH_UPDATES_REPO = 'DLTweaker';
 const GH_RELEASES_API = `https://api.github.com/repos/${GH_UPDATES_OWNER}/${GH_UPDATES_REPO}/releases?per_page=12`;
 
+/** Не показывать пользователю целые HTML-страницы (прокси/404/Cloudflare) как текст ошибки. */
+function sanitizeNetworkErrorMessage(raw) {
+  const s = raw == null ? '' : String(raw);
+  const head = s.slice(0, 6000).toLowerCase();
+  if (head.includes('<!doctype') || head.includes('<html') || head.includes('</html>')) {
+    return 'Сервер вернул HTML вместо данных (прокси, блокировка или неверный URL канала обновлений).';
+  }
+  return s.length > 420 ? `${s.slice(0, 420)}…` : s;
+}
+
+/**
+ * electron-updater по умолчанию ждёт ответ до ~60 с на запрос — при двух каналах и плоской сети это ощущается как «зависание».
+ * Короткий таймаут для latest.yml / API; длинный — для .exe / .blockmap.
+ */
+function patchAutoUpdaterHttpTimeouts() {
+  const ex = autoUpdater.httpExecutor;
+  if (!ex || ex.__dltwHttpTimeoutPatched) return;
+  ex.__dltwHttpTimeoutPatched = true;
+  const CHECK_MS = 14_000;
+  const DOWNLOAD_MS = 480_000;
+
+  function pickTimeout(path) {
+    const p = String(path || '').toLowerCase();
+    return /\.(exe|zip|dmg|7z|msi|blockmap)(\?|;|#|$)/i.test(p) ? DOWNLOAD_MS : CHECK_MS;
+  }
+
+  if (typeof ex.request === 'function') {
+    const origRequest = ex.request.bind(ex);
+    ex.request = (options, cancellationToken, data) => {
+      if (!options || typeof options !== 'object' || options.timeout != null) {
+        return origRequest(options, cancellationToken, data);
+      }
+      return origRequest({ ...options, timeout: pickTimeout(options.path) }, cancellationToken, data);
+    };
+  }
+  if (typeof ex.doDownload === 'function') {
+    const origDl = ex.doDownload.bind(ex);
+    ex.doDownload = (requestOptions, options, redirectCount) => {
+      let ro = requestOptions;
+      if (ro && typeof ro === 'object' && ro.timeout == null) {
+        ro = { ...ro, timeout: pickTimeout(ro.path) };
+      }
+      return origDl(ro, options, redirectCount);
+    };
+  }
+}
+
 /** Optional local blurbs when GitHub `body` is empty (electron-builder often publishes without notes). */
 let cachedBundledReleaseNotes = undefined;
 
@@ -152,9 +199,10 @@ async function getQuickPatchChangelogList() {
 const GENERIC_UPDATE_FEED_BASE = 'https://github.com/d1n4styy/DLTweaker/releases/latest/download/';
 
 /**
- * Канал обновлений (сборка): по умолчанию generic (`latest.yml`); при сбое — провайдер GitHub.
- * Только generic (без второй попытки): `DLTWEAKER_USE_GENERIC_UPDATER=1`.
- * Сначала GitHub, потом generic: `DLTWEAKER_USE_GITHUB_UPDATER=1` (старое поведение).
+ * Канал обновлений (сборка): по умолчанию только generic (`latest.yml`).
+ * Второй провайдер (GitHub API) при сбое: `DLTWEAKER_USE_GITHUB_FALLBACK=1`.
+ * Только generic: `DLTWEAKER_USE_GENERIC_UPDATER=1`.
+ * Сначала GitHub, потом generic: `DLTWEAKER_USE_GITHUB_UPDATER=1`.
  * Свой хост: `DLTWEAKER_UPDATE_URL` (HTTPS, `latest.yml` в корне).
  */
 function configureAutoUpdaterFeed() {
@@ -179,7 +227,7 @@ function configureAutoUpdaterFeed() {
   }
 }
 
-/** По умолчанию generic (`latest.yml`), затем GitHub; порядок можно поменять переменными окружения. */
+/** Generic `latest.yml`; при `DLTWEAKER_USE_GITHUB_FALLBACK=1` — вторая попытка через провайдер GitHub. */
 async function checkForUpdatesWithFeedFallback() {
   const customUrl = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
   if (customUrl || !app.isPackaged) {
@@ -187,6 +235,7 @@ async function checkForUpdatesWithFeedFallback() {
   }
   const genericOnly = (process.env.DLTWEAKER_USE_GENERIC_UPDATER || '').trim() === '1';
   const githubFirst = (process.env.DLTWEAKER_USE_GITHUB_UPDATER || '').trim() === '1';
+  const githubFallback = (process.env.DLTWEAKER_USE_GITHUB_FALLBACK || '').trim() === '1';
 
   /** @type {Array<'generic' | 'github'>} */
   let feedOrder;
@@ -194,8 +243,11 @@ async function checkForUpdatesWithFeedFallback() {
     feedOrder = ['generic'];
   } else if (githubFirst) {
     feedOrder = ['github', 'generic'];
-  } else {
+  } else if (githubFallback) {
     feedOrder = ['generic', 'github'];
+  } else {
+    /** По умолчанию один канал — `releases/latest/download/latest.yml` (быстрее и без второго долгого запроса). */
+    feedOrder = ['generic'];
   }
 
   let lastErr;
@@ -219,8 +271,20 @@ function applyAutoUpdaterDefaults() {
   autoUpdater.autoDownload = true;
   autoUpdater.allowDowngrade = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.disableDifferentialDownload = false;
+  /** Полный установщик надёжнее на нестабильных сетях, чем blockmap + дифф. */
+  autoUpdater.disableDifferentialDownload = true;
   autoUpdater.disableWebInstaller = true;
+  try {
+    const v = app.getVersion();
+    autoUpdater.requestHeaders = {
+      ...autoUpdater.requestHeaders,
+      'User-Agent': `DeadlockTweaker/${v} (${process.platform})`,
+      Accept: '*/*',
+    };
+  } catch {
+    /* ignore */
+  }
+  patchAutoUpdaterHttpTimeouts();
 }
 
 /** Splash: больше высоты героя — иначе max-height:100% не даёт логотипу вырасти. */
@@ -438,23 +502,36 @@ async function runSplashUpdateFlow(opts = {}) {
   /** After `checkForUpdates` (incl. retries) finishes — avoids treating check-time `error` as fatal (electron-updater emits before throw). */
   let postCheckComplete = false;
   let lastUpdateDownloadTotal = 0;
-  const flowTimeoutMs = fast ? 22000 : 28000;
-  let flowGuard = setTimeout(() => {
-    if (settled) return;
-    settled = true;
-    done();
-    clearUpdaterListeners();
-    sendSplashStatus({ phase: 'offline', message: 'Таймаут проверки — запуск без обновления' });
-    setTimeout(() => {
-      void openMainAfterSplash(fast);
-    }, fast ? 450 : 650);
-  }, flowTimeoutMs);
+  /** Проверка latest.yml — короткий лимит; после `update-available` продлеваем на загрузку установщика. */
+  const checkPhaseTimeoutMs = fast ? 24_000 : 32_000;
+  const downloadPhaseTimeoutMs = 15 * 60 * 1000;
+  let flowGuard = null;
 
-  const done = () => {
+  const clearFlowGuard = () => {
     if (flowGuard) {
       clearTimeout(flowGuard);
       flowGuard = null;
     }
+  };
+
+  const armFlowGuard = (ms, message) => {
+    clearFlowGuard();
+    flowGuard = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      done();
+      clearUpdaterListeners();
+      sendSplashStatus({ phase: 'offline', message });
+      setTimeout(() => {
+        void openMainAfterSplash(fast);
+      }, fast ? 450 : 650);
+    }, ms);
+  };
+
+  armFlowGuard(checkPhaseTimeoutMs, 'Таймаут проверки — запуск без обновления');
+
+  const done = () => {
+    clearFlowGuard();
   };
 
   const goMain = async () => {
@@ -488,6 +565,7 @@ async function runSplashUpdateFlow(opts = {}) {
   };
 
   addUpdaterListener('update-available', (info) => {
+    armFlowGuard(downloadPhaseTimeoutMs, 'Таймаут загрузки обновления — открываем приложение');
     sendSplashStatus({
       phase: 'available',
       message: `Доступна версия ${info.version}`,
@@ -525,7 +603,7 @@ async function runSplashUpdateFlow(opts = {}) {
     settled = true;
     done();
     clearUpdaterListeners();
-    const hint = err && err.message ? String(err.message).slice(0, 220) : '';
+    const hint = sanitizeNetworkErrorMessage(err && err.message ? String(err.message) : '').slice(0, 220);
     sendSplashStatus({
       phase: 'offline',
       message: 'Ошибка при загрузке обновления — открываем приложение',
@@ -543,7 +621,7 @@ async function runSplashUpdateFlow(opts = {}) {
       settled = true;
       done();
       clearUpdaterListeners();
-      const hint = err && err.message ? String(err.message).slice(0, 220) : '';
+      const hint = sanitizeNetworkErrorMessage(err && err.message ? String(err.message) : '').slice(0, 220);
       sendSplashStatus({
         phase: 'offline',
         message: 'Не удалось проверить обновления — открываем приложение',
@@ -651,7 +729,15 @@ ipcMain.handle('game-process-status', async () => getDeadlockRunningStatus());
 
 ipcMain.handle('app-get-version', () => app.getVersion());
 
-ipcMain.handle('quick-patch-apply', async () => applyQuickPatch(app, { silent: false }));
+ipcMain.handle('quick-patch-check-only', async () => checkQuickPatchOnly(app));
+
+ipcMain.handle('quick-patch-apply', async () => {
+  const r = await applyQuickPatch(app, { silent: false });
+  if (r && r.ok && r.code === 'applied' && mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.send('quick-patch-updated');
+  }
+  return r;
+});
 
 ipcMain.handle('quick-patch-get-css', async () => {
   const css = await readOverlayCss(app);
@@ -669,21 +755,41 @@ ipcMain.handle('open-external-url', async (_e, href) => {
 
 ipcMain.handle('updates-release-notes', async () => {
   try {
-    const res = await fetch(GH_RELEASES_API, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': `DeadlockTweaker/${app.getVersion()} (${process.platform})`,
-      },
-    });
+    const ac = new AbortController();
+    const to = setTimeout(() => ac.abort(), 12_000);
+    let res;
+    try {
+      res = await fetch(GH_RELEASES_API, {
+        signal: ac.signal,
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': `DeadlockTweaker/${app.getVersion()} (${process.platform})`,
+        },
+      });
+    } finally {
+      clearTimeout(to);
+    }
+    const bodyText = await res.text().catch(() => '');
     if (!res.ok) {
-      const detail = await res.text().catch(() => '');
       return {
         ok: false,
         message: `GitHub API: ${res.status}`,
-        detail: detail ? String(detail).slice(0, 400) : undefined,
+        detail: sanitizeNetworkErrorMessage(bodyText).slice(0, 400) || undefined,
       };
     }
-    const data = await res.json();
+    const head = bodyText.trimStart().slice(0, 1);
+    if (head === '<') {
+      return {
+        ok: false,
+        message: 'GitHub вернул HTML вместо списка релизов (сеть или лимит запросов).',
+      };
+    }
+    let data;
+    try {
+      data = JSON.parse(bodyText);
+    } catch {
+      return { ok: false, message: 'Не удалось разобрать ответ GitHub API.' };
+    }
     if (!Array.isArray(data)) {
       return { ok: false, message: 'Неожиданный ответ API' };
     }
@@ -723,8 +829,8 @@ ipcMain.handle('updates-release-notes', async () => {
     });
     return { ok: true, items, quickPatchItems };
   } catch (err) {
-    const message = err && err.message ? String(err.message) : 'Запрос не выполнен';
-    return { ok: false, message };
+    const raw = err && err.name === 'AbortError' ? 'Таймаут запроса к GitHub' : err && err.message ? String(err.message) : 'Запрос не выполнен';
+    return { ok: false, message: sanitizeNetworkErrorMessage(raw) };
   }
 });
 
@@ -782,7 +888,7 @@ ipcMain.handle('updates-check-only', async () => {
       version: result.updateInfo.version,
     };
   } catch (err) {
-    const msg = err && err.message ? String(err.message) : 'Проверка не удалась';
+    const msg = sanitizeNetworkErrorMessage(err && err.message ? String(err.message) : 'Проверка не удалась');
     return { ok: false, code: 'error', message: msg };
   } finally {
     autoUpdater.autoDownload = prevAuto;
@@ -897,7 +1003,7 @@ ipcMain.handle('updates-download-install', async (event) => {
       message: 'Обновление скачано и установится при выходе из приложения.',
     };
   } catch (err) {
-    const msg = err && err.message ? String(err.message) : 'Загрузка не удалась';
+    const msg = sanitizeNetworkErrorMessage(err && err.message ? String(err.message) : 'Загрузка не удалась');
     return { ok: false, code: 'error', message: msg };
   } finally {
     autoUpdater.removeListener('download-progress', forwardProgress);

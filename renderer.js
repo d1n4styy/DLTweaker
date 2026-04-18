@@ -938,6 +938,9 @@ function bindSettingsUpdates() {
   if (!btnCheck || !btnDl || !msg) return;
   if (typeof api.checkUpdatesOnly !== 'function' || typeof api.downloadUpdatesInstall !== 'function') return;
 
+  /** После «Проверить»: что скачивает «Скачать обновление». */
+  let pendingUpdateKind = 'none';
+
   if (typeof api.onUpdatesFlowResumed === 'function') {
     api.onUpdatesFlowResumed(() => {
       clearProgress();
@@ -970,36 +973,117 @@ function bindSettingsUpdates() {
     setMsg('Проверка…', '');
     btnCheck.disabled = true;
     btnDl.disabled = true;
+    pendingUpdateKind = 'none';
     try {
-      const r = await api.checkUpdatesOnly();
+      const hasQp = typeof api.quickPatchCheckOnly === 'function';
+      const [r, rQp] = hasQp
+        ? await Promise.all([api.checkUpdatesOnly(), api.quickPatchCheckOnly()])
+        : [await api.checkUpdatesOnly(), null];
+
+      const parts = [];
       if (!r || !r.ok) {
-        setMsg(r?.message || 'Не удалось проверить обновления', 'err');
-        btnDl.disabled = true;
+        parts.push(r?.message || 'Не удалось проверить обновления приложения.');
       } else if (r.code === 'uptodate') {
-        setMsg(`Установлена последняя версия (${r.currentVersion || 'текущая'}).`, 'ok');
-        btnDl.disabled = true;
+        parts.push(`Приложение: последняя версия (${r.currentVersion || 'текущая'}).`);
       } else if (r.code === 'available') {
-        setMsg(`Доступна версия ${r.version}. Нажмите «Скачать обновление».`, 'ok');
-        btnDl.disabled = false;
+        parts.push(`Приложение: доступна версия ${r.version}.`);
       } else if (r.code === 'dev') {
-        setMsg(r.message || 'Режим разработки', 'warn');
-        btnDl.disabled = true;
+        parts.push(r.message || 'Режим разработки (канал NSIS).');
       } else if (r.code === 'noconfig') {
-        setMsg(r.message || 'Канал обновлений не настроен', 'err');
-        btnDl.disabled = true;
+        parts.push(r.message || 'Канал обновлений приложения не настроен.');
       } else {
-        setMsg(r.message || 'Готово', '');
-        btnDl.disabled = true;
+        parts.push(r.message || 'Приложение: готово.');
       }
+
+      if (hasQp && rQp) {
+        if (!rQp.ok) {
+          parts.push(`Quick-patch: ${rQp.message || 'ошибка проверки'}.`);
+        } else if (rQp.code === 'available') {
+          const d = rQp.description ? ` — ${rQp.description}` : '';
+          parts.push(`Quick-patch: доступен «${rQp.id}»${d}.`);
+        } else if (rQp.code === 'uptodate') {
+          parts.push('Quick-patch: уже актуален.');
+        } else if (rQp.code === 'range') {
+          parts.push(rQp.message || 'Quick-patch: не для этой версии приложения.');
+        } else if (rQp.code === 'noop') {
+          parts.push('Quick-patch: в манифесте нет файлов для загрузки.');
+        } else {
+          parts.push(rQp.message || 'Quick-patch: готово.');
+        }
+      }
+
+      if (r && r.ok && r.code === 'available') {
+        pendingUpdateKind = 'nsis';
+      } else if (rQp && rQp.ok && rQp.code === 'available') {
+        pendingUpdateKind = 'qp';
+      }
+
+      if (r && r.ok && r.code === 'available' && rQp && rQp.ok && rQp.code === 'available') {
+        parts.push(
+          'Сначала скачается версия приложения; quick-patch подтянется при следующем запуске.',
+        );
+      }
+
+      btnDl.disabled = pendingUpdateKind === 'none';
+
+      let tone = '';
+      if (pendingUpdateKind !== 'none') {
+        tone = 'ok';
+      } else if (!r || !r.ok) {
+        if (rQp && rQp.ok && rQp.code === 'available') tone = 'ok';
+        else if (r && r.code === 'dev') tone = 'warn';
+        else tone = 'err';
+      } else if (r.code === 'dev') {
+        tone = 'warn';
+      } else if (r.ok && r.code === 'uptodate' && rQp && !rQp.ok) {
+        tone = 'warn';
+      } else {
+        tone = 'ok';
+      }
+
+      setMsg(parts.join(' '), tone);
     } catch (e) {
       setMsg(e && e.message ? String(e.message) : 'Ошибка', 'err');
       btnDl.disabled = true;
+      pendingUpdateKind = 'none';
     }
     btnCheck.disabled = false;
   });
 
   btnDl.addEventListener('click', async () => {
     clearProgress();
+    if (pendingUpdateKind === 'qp' && typeof api.quickPatchApply === 'function') {
+      setMsg('Загрузка quick-patch…', '');
+      btnDl.disabled = true;
+      btnCheck.disabled = true;
+      let r = null;
+      try {
+        r = await api.quickPatchApply();
+        pendingUpdateKind = 'none';
+        if (!r || !r.ok) {
+          setMsg(r?.message || 'Не удалось применить патч', 'err');
+          btnDl.disabled = false;
+        } else if (r.code === 'applied') {
+          setMsg(r.message || 'Патч загружен и применён.', 'ok');
+          btnDl.disabled = true;
+          await refreshQuickPatchCss();
+        } else if (r.code === 'uptodate' || r.code === 'noop') {
+          setMsg(r.message || 'Готово', 'ok');
+          btnDl.disabled = true;
+        } else {
+          setMsg(r.message || 'Готово', 'warn');
+          btnDl.disabled = false;
+        }
+      } catch (e) {
+        pendingUpdateKind = 'none';
+        setMsg(e && e.message ? String(e.message) : 'Ошибка', 'err');
+        btnDl.disabled = false;
+      } finally {
+        btnCheck.disabled = false;
+      }
+      return;
+    }
+
     setMsg('Открываем окно обновления…', '');
     btnDl.disabled = true;
     btnCheck.disabled = true;

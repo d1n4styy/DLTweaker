@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   fetchReleaseNotes: () => ipcRenderer.invoke('updates-release-notes'),
   openExternalGithub: (url) => ipcRenderer.invoke('open-external-url', url),
+  quickPatchCheckOnly: () => ipcRenderer.invoke('quick-patch-check-only'),
   quickPatchApply: () => ipcRenderer.invoke('quick-patch-apply'),
   quickPatchGetCss: () => ipcRenderer.invoke('quick-patch-get-css'),
   onQuickPatchUpdated: (callback) => {

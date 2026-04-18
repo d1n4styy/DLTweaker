@@ -81,7 +81,17 @@ async function fetchJson(url, timeoutMs) {
       },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    const raw = await res.text();
+    const start = raw.trimStart();
+    if (start.startsWith('<') || ct.includes('text/html')) {
+      throw new Error('Вместо манифеста пришла HTML-страница (сеть, прокси или блокировка).');
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error('Ответ не является корректным JSON.');
+    }
   } finally {
     clearTimeout(t);
   }
@@ -107,11 +117,11 @@ async function fetchAsset(url, maxBytes) {
 }
 
 /**
+ * Разбор манифеста и локального состояния без загрузки файлов.
  * @param {import('electron').App} app
- * @param {{ silent?: boolean }} opts
+ * @param {boolean} silent
  */
-async function applyQuickPatch(app, opts) {
-  const silent = Boolean(opts && opts.silent);
+async function resolveQuickPatchStatus(app, silent) {
   const userData = app.getPath('userData');
   const root = quickPatchRoot(userData);
   const activeDir = path.join(root, 'active');
@@ -120,10 +130,14 @@ async function applyQuickPatch(app, opts) {
 
   let manifest;
   try {
-    manifest = await fetchJson(MANIFEST_URL, 12000);
+    manifest = await fetchJson(MANIFEST_URL, 10_000);
   } catch (e) {
     const msg =
-      e && e.name === 'AbortError' ? 'таймаут' : e && e.message ? String(e.message) : 'ошибка сети';
+      e && e.name === 'AbortError'
+        ? 'таймаут (10 с)'
+        : e && e.message
+          ? String(e.message)
+          : 'ошибка сети';
     return { ok: false, code: 'fetch', message: silent ? '' : `Манифест: ${msg}` };
   }
 
@@ -143,6 +157,9 @@ async function applyQuickPatch(app, opts) {
       ok: true,
       code: 'range',
       message: silent ? '' : `Этот патч не для версии ${curVer} (диапазон ${minV}…${maxV}).`,
+      id,
+      minV,
+      maxV,
     };
   }
 
@@ -162,6 +179,66 @@ async function applyQuickPatch(app, opts) {
     };
   }
 
+  const description =
+    typeof manifest.description === 'string' ? manifest.description.trim() : '';
+
+  return {
+    ok: true,
+    code: 'available',
+    id,
+    description,
+    message: silent ? '' : description ? `Доступен патч «${id}».` : `Доступен патч «${id}».`,
+    root,
+    activeDir,
+    state,
+    assets,
+    maxAsset,
+  };
+}
+
+/** Только проверка (без записи файлов), для вкладки «Обновления». */
+async function checkQuickPatchOnly(app) {
+  const st = await resolveQuickPatchStatus(app, false);
+  if (!st.ok) {
+    return { ok: false, code: st.code, message: st.message || '' };
+  }
+  if (st.code === 'available') {
+    return {
+      ok: true,
+      code: 'available',
+      id: st.id,
+      description: st.description || '',
+      message: st.message || '',
+    };
+  }
+  return {
+    ok: true,
+    code: st.code,
+    message: st.message || '',
+    id: st.id,
+    minV: st.minV,
+    maxV: st.maxV,
+  };
+}
+
+/**
+ * @param {import('electron').App} app
+ * @param {{ silent?: boolean }} opts
+ */
+async function applyQuickPatch(app, opts) {
+  const silent = Boolean(opts && opts.silent);
+  const st = await resolveQuickPatchStatus(app, silent);
+  if (!st.ok) {
+    return { ok: false, code: st.code, message: st.message };
+  }
+  if (st.code === 'range' || st.code === 'uptodate' || st.code === 'noop') {
+    return { ok: true, code: st.code, message: st.message, id: st.id };
+  }
+  if (st.code !== 'available') {
+    return { ok: false, code: 'bad', message: silent ? '' : 'Неизвестное состояние патча' };
+  }
+
+  const { root, activeDir, state, assets, maxAsset, id } = st;
   await fs.mkdir(activeDir, { recursive: true });
 
   for (const a of assets) {
@@ -201,5 +278,6 @@ async function readOverlayCss(app) {
 
 module.exports = {
   applyQuickPatch,
+  checkQuickPatchOnly,
   readOverlayCss,
 };
