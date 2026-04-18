@@ -145,39 +145,83 @@ function createMainWindow() {
     });
   }
 
-  state.mainWin.once('ready-to-show', () => {
-    if (!state.mainWin || state.mainWin.isDestroyed()) return;
-    try {
-      state.mainWin.setContentSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
-      state.mainWin.setMinimumSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
-    } catch {
-      /* ignore */
+  let showFallbackTimer = null;
+  const cancelShowFallback = () => {
+    if (showFallbackTimer) {
+      clearTimeout(showFallbackTimer);
+      showFallbackTimer = null;
     }
-  });
-  state.mainWin.loadFile('index.html');
-  state.mainWin.webContents.once('did-finish-load', () => {
-    const w = state.mainWin;
-    if (!state.mainWin || state.mainWin.isDestroyed()) return;
+  };
+
+  function revealMainWindow() {
+    const win = state.mainWin;
+    if (!win || win.isDestroyed()) return;
     try {
-      state.mainWin.setContentSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
-      state.mainWin.setMinimumSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+      win.center();
     } catch {
       /* ignore */
     }
     try {
-      state.mainWin.show();
+      win.show();
     } catch {
       /* ignore */
     }
-    splashApi.bringSplashToFront();
+    try {
+      win.focus();
+    } catch {
+      /* ignore */
+    }
+    if (state.splashWin && !state.splashWin.isDestroyed()) {
+      try {
+        state.splashWin.setAlwaysOnTop(false);
+      } catch {
+        /* ignore */
+      }
+    }
     if (!state.mainWinSplashCloseScheduled) {
       state.mainWinSplashCloseScheduled = true;
       setTimeout(() => {
         if (state.splashWin && !state.splashWin.isDestroyed()) {
           splashApi.closeSplashProgrammatically();
         }
-      }, 100);
+      }, 120);
     }
+  }
+
+  showFallbackTimer = setTimeout(() => {
+    showFallbackTimer = null;
+    revealMainWindow();
+  }, 12_000);
+
+  state.mainWin.once('ready-to-show', () => {
+    if (!state.mainWin || state.mainWin.isDestroyed()) return;
+    cancelShowFallback();
+    try {
+      state.mainWin.setContentSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+      state.mainWin.setMinimumSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+    } catch {
+      /* ignore */
+    }
+    revealMainWindow();
+  });
+
+  state.mainWin.webContents.once('did-fail-load', (_event, _code, _desc, _url, isMainFrame) => {
+    if (!isMainFrame) return;
+    cancelShowFallback();
+    revealMainWindow();
+  });
+
+  state.mainWin.webContents.once('did-finish-load', () => {
+    const w = state.mainWin;
+    if (!state.mainWin || state.mainWin.isDestroyed()) return;
+    cancelShowFallback();
+    try {
+      state.mainWin.setContentSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+      state.mainWin.setMinimumSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+    } catch {
+      /* ignore */
+    }
+    revealMainWindow();
     void (async () => {
       const pending = state.splashQuickPatchPromise;
       if (pending) {
@@ -194,6 +238,8 @@ function createMainWindow() {
       }
     })();
   });
+
+  state.mainWin.loadFile('index.html');
   state.mainWin.on('closed', () => {
     state.mainWin = null;
     state.mainWinSplashCloseScheduled = false;

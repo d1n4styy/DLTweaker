@@ -33,21 +33,34 @@ if (!app.requestSingleInstanceLock()) {
     updaterSplash.focusExistingWindow();
   });
 
-  app.whenReady().then(() => {
-    if (process.platform !== 'darwin') {
-      app.setQuitOnLastWindowClosed(true);
-    }
-    if (process.platform === 'win32') {
+  app
+    .whenReady()
+    .then(() => {
       try {
-        Menu.setApplicationMenu(null);
+        if (process.platform !== 'darwin' && typeof app.setQuitOnLastWindowClosed === 'function') {
+          app.setQuitOnLastWindowClosed(true);
+        }
       } catch {
         /* ignore */
       }
-    }
-    applicationMain.registerAppIpc();
-    updaterSplash.registerUpdaterIpc();
-    updaterSplash.startSplashThenMain();
-  });
+      if (process.platform === 'win32') {
+        try {
+          Menu.setApplicationMenu(null);
+        } catch {
+          /* ignore */
+        }
+      }
+      applicationMain.registerAppIpc();
+      updaterSplash.registerUpdaterIpc();
+      updaterSplash.startSplashThenMain();
+    })
+    .catch((err) => {
+      try {
+        console.error('[DLTweaker] whenReady failed:', err);
+      } catch {
+        /* ignore */
+      }
+    });
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
