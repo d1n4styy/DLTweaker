@@ -51,6 +51,8 @@ function stretchSplashForInstallCover() {
     const wa = screen.getDisplayMatching(splashWin.getBounds()).workArea;
     splashWin.setResizable(true);
     splashWin.setMinimumSize(1, 1);
+    /* Снять фикс 220×320 (min/max), иначе setBounds на workArea не применится */
+    splashWin.setMaximumSize(16000, 16000);
     splashWin.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
     splashWin.setBackgroundColor('#0a0a0a');
     splashWin.setAlwaysOnTop(true);
@@ -248,13 +250,18 @@ function setupMainWindowSizing(win) {
 
 function createSplashWindow() {
   splashWin = new BrowserWindow({
+    useContentSize: true,
     width: SPLASH_CONTENT_WIDTH,
     height: SPLASH_CONTENT_HEIGHT,
+    minWidth: SPLASH_CONTENT_WIDTH,
+    minHeight: SPLASH_CONTENT_HEIGHT,
+    maxWidth: SPLASH_CONTENT_WIDTH,
+    maxHeight: SPLASH_CONTENT_HEIGHT,
     frame: false,
-    resizable: true,
-    minimizable: true,
-    maximizable: true,
-    fullscreenable: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
     show: false,
     center: true,
     alwaysOnTop: true,
