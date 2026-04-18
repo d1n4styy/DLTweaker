@@ -74,8 +74,8 @@
               Profiles
             </button>
             <button type="button" class="nav-item" data-view="settings">
-              <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z" /><path d="M19.4 15a7.9 7.9 0 00.1-1l2-1.2-2-3.4-2.3.7a8 8 0 00-1.7-1l-.4-2.4H10l-.4 2.4a8 8 0 00-1.7 1l-2.3-.7-2 3.4L4.5 14a7.7 7.7 0 000 2l-2 1.2 2 3.4 2.3-.7a8 8 0 001.7 1l.4 2.4h4.6l.4-2.4a8 8 0 001.7-1l2.3.7 2-3.4-2-1.2z" /></svg>
-              Settings
+              <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h6v6h-6v-6z" /><path d="M9 9h6v6H9V9z" /></svg>
+              Обновления
             </button>
           </nav>
 
@@ -435,19 +435,29 @@
           <section class="view view-settings hidden" data-view-panel="settings">
             <div class="main-header">
               <div>
-                <h1>Settings</h1>
-                <p class="sub">Параметры приложения.</p>
+                <h1>Обновления</h1>
+                <p class="sub">Проверка версии, дельта-загрузка мелких патчей и журнал релизов с GitHub.</p>
               </div>
             </div>
             <div class="settings-layout">
               <article class="card settings-updates-card">
-                <h2 class="card-title">Обновления</h2>
+                <h2 class="card-title">Канал обновлений</h2>
+                <p class="settings-delta-hint">
+                  При небольших патчах загружается в основном <strong>разница</strong> к установщику (blockmap), а не весь файл — если в кеше есть копия текущего установщика
+                  (<code>installer.exe</code> в каталоге обновлений Windows). После первой полной загрузки следующие обычно заметно меньше.
+                </p>
                 <p class="settings-version">
                   <span class="settings-version-label">Текущая версия</span>
                   <strong id="settings-app-version">—</strong>
                 </p>
                 <button type="button" class="btn" id="settings-check-updates">Проверить обновления</button>
                 <p class="settings-update-msg" id="settings-update-msg" role="status" aria-live="polite"></p>
+              </article>
+              <article class="card updates-changelog-card">
+                <h2 class="card-title">Последние версии</h2>
+                <p class="updates-changelog-intro">Описания из GitHub Releases (новые сверху).</p>
+                <div class="updates-changelog-list" id="updates-changelog-list" role="list"></div>
+                <p class="updates-changelog-foot" id="updates-changelog-status" aria-live="polite"></p>
               </article>
             </div>
           </section>

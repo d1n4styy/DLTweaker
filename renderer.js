@@ -508,8 +508,105 @@ function bindNav() {
       });
 
       if (view === 'profiles') renderProfilesList();
+      if (view === 'settings') void loadUpdatesChangelog();
     });
   });
+}
+
+let updatesChangelogLoaded = false;
+let updatesChangelogLoading = false;
+
+function formatReleaseDateRu(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  } catch {
+    return String(iso);
+  }
+}
+
+async function loadUpdatesChangelog() {
+  const listEl = document.getElementById('updates-changelog-list');
+  const statusEl = document.getElementById('updates-changelog-status');
+  const api = window.electronAPI;
+  if (!listEl || !statusEl || !api || typeof api.fetchReleaseNotes !== 'function') return;
+  if (updatesChangelogLoading || updatesChangelogLoaded) return;
+
+  updatesChangelogLoading = true;
+  statusEl.textContent = 'Загрузка списка релизов…';
+  statusEl.className = 'updates-changelog-foot';
+
+  try {
+    const res = await api.fetchReleaseNotes();
+    if (!res || !res.ok) {
+      statusEl.classList.add('is-error');
+      statusEl.textContent = res?.message || 'Не удалось загрузить релизы';
+      updatesChangelogLoading = false;
+      return;
+    }
+
+    listEl.textContent = '';
+    const items = Array.isArray(res.items) ? res.items : [];
+    if (items.length === 0) {
+      statusEl.textContent = 'Пока нет опубликованных релизов.';
+      updatesChangelogLoaded = true;
+      updatesChangelogLoading = false;
+      return;
+    }
+
+    items.forEach((it) => {
+      const article = document.createElement('article');
+      article.className = 'updates-changelog-item';
+      article.setAttribute('role', 'listitem');
+
+      const head = document.createElement('div');
+      head.className = 'updates-changelog-head';
+
+      const h = document.createElement('h3');
+      h.className = 'updates-changelog-title';
+      const title = (it.name && String(it.name).trim()) || (it.tag && String(it.tag).trim()) || 'Релиз';
+      h.textContent = title;
+
+      const meta = document.createElement('p');
+      meta.className = 'updates-changelog-meta';
+      const parts = [it.tag && String(it.tag).trim(), formatReleaseDateRu(it.publishedAt)].filter(Boolean);
+      meta.textContent = parts.join(' · ');
+
+      head.append(h, meta);
+
+      const body = document.createElement('p');
+      body.className = 'updates-changelog-body';
+      const btxt = it.body && String(it.body).trim();
+      body.textContent = btxt || '—';
+
+      article.append(head, body);
+
+      if (it.url && typeof api.openExternalGithub === 'function') {
+        const row = document.createElement('div');
+        row.className = 'updates-changelog-link';
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-ghost btn-sm';
+        b.textContent = 'Открыть на GitHub';
+        b.addEventListener('click', () => {
+          void api.openExternalGithub(it.url);
+        });
+        row.append(b);
+        article.append(row);
+      }
+
+      listEl.append(article);
+    });
+
+    statusEl.textContent = '';
+    updatesChangelogLoaded = true;
+  } catch (e) {
+    statusEl.classList.add('is-error');
+    statusEl.textContent = e && e.message ? String(e.message) : 'Ошибка';
+  }
+  updatesChangelogLoading = false;
 }
 
 function bindTitlebar() {

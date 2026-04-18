@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getGameProcessStatus: () => ipcRenderer.invoke('game-process-status'),
   getAppVersion: () => ipcRenderer.invoke('app-get-version'),
   checkForUpdatesManual: () => ipcRenderer.invoke('updates-check-manual'),
+  fetchReleaseNotes: () => ipcRenderer.invoke('updates-release-notes'),
+  openExternalGithub: (url) => ipcRenderer.invoke('open-external-url', url),
 });

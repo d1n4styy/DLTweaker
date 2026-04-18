@@ -79,7 +79,12 @@
       ) {
         extra = `Загружено ${formatBytes(payload.downloadedTotal)} · установка без окна мастера`;
       }
-      sub.textContent = extra || hints[payload.phase] || '';
+      let subText = extra || hints[payload.phase] || '';
+      if (payload.detail && String(payload.detail).trim()) {
+        const d = String(payload.detail).trim();
+        subText = subText ? `${subText}\n\n${d}` : d;
+      }
+      sub.textContent = subText;
     }
     if (payload.phase === 'downloading' && typeof payload.percent === 'number') {
       setProgress(payload.percent, { indeterminate: false });

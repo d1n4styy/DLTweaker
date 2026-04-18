@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const { execFile } = require('child_process');
@@ -89,21 +89,64 @@ async function prepareUpdaterSession() {
   }
 }
 
-/**
- * Stable update feed: GitHub "latest/download" (generic) avoids electron-updater's GitHub
- * provider quirks (ATOM + /releases/latest JSON under Electron).
- */
-const DEFAULT_UPDATE_FEED_BASE = 'https://github.com/d1n4styy/DLTweaker/releases/latest/download/';
+const GH_UPDATES_OWNER = 'd1n4styy';
+const GH_UPDATES_REPO = 'DLTweaker';
+const GH_RELEASES_API = `https://api.github.com/repos/${GH_UPDATES_OWNER}/${GH_UPDATES_REPO}/releases?per_page=12`;
 
-/** Optional override: HTTPS base with `latest.yml` (generic). Otherwise packaged builds use DEFAULT_UPDATE_FEED_BASE. */
+/** Same as first `publish` entry in package.json — works for any installed version (incl. 1.0.x). */
+const GENERIC_UPDATE_FEED_BASE = 'https://github.com/d1n4styy/DLTweaker/releases/latest/download/';
+
+/**
+ * Default packaged feed: **generic** `latest/download` (reliable with embedded `app-update.yml` and older builds).
+ * Optional: `DLTWEAKER_USE_GITHUB_UPDATER=1` uses GitHub provider (better for blockmap deltas when it works).
+ * Custom host: `DLTWEAKER_UPDATE_URL` (HTTPS base with trailing slash, `latest.yml` at root).
+ */
 function configureAutoUpdaterFeed() {
   const raw = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
-  const url = raw ? raw.replace(/\/?$/, '/') : app.isPackaged ? DEFAULT_UPDATE_FEED_BASE : '';
-  if (!url) return;
+  if (raw) {
+    try {
+      autoUpdater.setFeedURL({ provider: 'generic', url: raw.replace(/\/?$/, '/') });
+    } catch {
+      /* keep embedded app-update.yml from electron-builder */
+    }
+    return;
+  }
+  if (!app.isPackaged) return;
   try {
-    autoUpdater.setFeedURL({ provider: 'generic', url });
+    if ((process.env.DLTWEAKER_USE_GITHUB_UPDATER || '').trim() === '1') {
+      autoUpdater.setFeedURL({ provider: 'github', owner: GH_UPDATES_OWNER, repo: GH_UPDATES_REPO });
+    } else {
+      autoUpdater.setFeedURL({ provider: 'generic', url: GENERIC_UPDATE_FEED_BASE });
+    }
   } catch {
     /* keep embedded app-update.yml from electron-builder */
+  }
+}
+
+function configureAutoUpdaterFeedGithubFallback() {
+  try {
+    autoUpdater.setFeedURL({ provider: 'github', owner: GH_UPDATES_OWNER, repo: GH_UPDATES_REPO });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Generic `latest.yml` first (stable for old installs); on failure try GitHub provider once. */
+async function checkForUpdatesWithFeedFallback() {
+  const customUrl = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
+  if (customUrl || !app.isPackaged) {
+    return await autoUpdater.checkForUpdates();
+  }
+  try {
+    return await autoUpdater.checkForUpdates();
+  } catch (firstErr) {
+    configureAutoUpdaterFeedGithubFallback();
+    applyAutoUpdaterDefaults();
+    try {
+      return await autoUpdater.checkForUpdates();
+    } catch {
+      throw firstErr;
+    }
   }
 }
 
@@ -112,12 +155,13 @@ function applyAutoUpdaterDefaults() {
   autoUpdater.allowDowngrade = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.disableDifferentialDownload = false;
+  autoUpdater.disableWebInstaller = true;
 }
 
 function createSplashWindow() {
   splashWin = new BrowserWindow({
     width: 440,
-    height: 340,
+    height: 400,
     frame: false,
     resizable: false,
     minimizable: false,
@@ -128,7 +172,7 @@ function createSplashWindow() {
     alwaysOnTop: true,
     icon: path.join(__dirname, 'assets', 'logo.png'),
     backgroundColor: '#0a0a0a',
-    title: 'Deadlock Tweaker',
+    title: 'Запуск',
     webPreferences: {
       preload: path.join(__dirname, 'splash-preload.js'),
       contextIsolation: true,
@@ -227,6 +271,8 @@ async function runSplashUpdateFlow() {
   applyAutoUpdaterDefaults();
 
   let settled = false;
+  /** After `checkForUpdates` (incl. retries) finishes — avoids treating check-time `error` as fatal (electron-updater emits before throw). */
+  let postCheckComplete = false;
   let lastUpdateDownloadTotal = 0;
   let flowGuard = setTimeout(() => {
     if (settled) return;
@@ -308,29 +354,41 @@ async function runSplashUpdateFlow() {
     }, 550);
   });
 
-  addUpdaterListener('error', () => {
-    if (settled) return;
+  addUpdaterListener('error', (err) => {
+    if (settled || !postCheckComplete) return;
     settled = true;
     done();
     clearUpdaterListeners();
-    sendSplashStatus({ phase: 'offline', message: 'Обновления недоступны — открываем приложение' });
+    const hint = err && err.message ? String(err.message).slice(0, 220) : '';
+    sendSplashStatus({
+      phase: 'offline',
+      message: 'Ошибка при загрузке обновления — открываем приложение',
+      detail: hint || undefined,
+    });
     setTimeout(() => {
       void openMainAfterSplash();
     }, 850);
   });
 
   try {
-    await autoUpdater.checkForUpdates();
-  } catch {
+    await checkForUpdatesWithFeedFallback();
+  } catch (err) {
     if (!settled) {
       settled = true;
       done();
       clearUpdaterListeners();
-      sendSplashStatus({ phase: 'offline', message: 'Не удалось проверить обновления' });
+      const hint = err && err.message ? String(err.message).slice(0, 220) : '';
+      sendSplashStatus({
+        phase: 'offline',
+        message: 'Не удалось проверить обновления — открываем приложение',
+        detail: hint || undefined,
+      });
       setTimeout(() => {
         void openMainAfterSplash();
       }, 800);
     }
+  } finally {
+    postCheckComplete = true;
   }
 }
 
@@ -412,6 +470,49 @@ ipcMain.handle('game-process-status', async () => getDeadlockRunningStatus());
 
 ipcMain.handle('app-get-version', () => app.getVersion());
 
+ipcMain.handle('open-external-url', async (_e, href) => {
+  const s = typeof href === 'string' ? href.trim() : '';
+  if (!/^https:\/\/github\.com\/d1n4styy\/DLTweaker\//i.test(s)) {
+    return false;
+  }
+  await shell.openExternal(s);
+  return true;
+});
+
+ipcMain.handle('updates-release-notes', async () => {
+  try {
+    const res = await fetch(GH_RELEASES_API, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': `DeadlockTweaker/${app.getVersion()} (${process.platform})`,
+      },
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      return {
+        ok: false,
+        message: `GitHub API: ${res.status}`,
+        detail: detail ? String(detail).slice(0, 400) : undefined,
+      };
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) {
+      return { ok: false, message: 'Неожиданный ответ API' };
+    }
+    const items = data.map((r) => ({
+      tag: r.tag_name != null ? String(r.tag_name) : '',
+      name: r.name != null ? String(r.name) : '',
+      publishedAt: r.published_at != null ? String(r.published_at) : '',
+      body: typeof r.body === 'string' ? r.body.trim() : '',
+      url: typeof r.html_url === 'string' ? r.html_url : '',
+    }));
+    return { ok: true, items };
+  } catch (err) {
+    const message = err && err.message ? String(err.message) : 'Запрос не выполнен';
+    return { ok: false, message };
+  }
+});
+
 ipcMain.handle('updates-check-manual', async (event) => {
   if (!app.isPackaged) {
     const envUrl = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
@@ -439,7 +540,7 @@ ipcMain.handle('updates-check-manual', async (event) => {
   const parent = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
 
   try {
-    const result = await autoUpdater.checkForUpdates();
+    const result = await checkForUpdatesWithFeedFallback();
     if (result == null) {
       return {
         ok: false,

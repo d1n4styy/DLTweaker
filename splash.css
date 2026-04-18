@@ -32,26 +32,33 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 28px 32px 24px;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
   background: radial-gradient(420px 220px at 50% 0%, rgba(162, 255, 0, 0.07), transparent 60%), var(--bg);
   border: 1px solid var(--card-border);
   border-radius: var(--radius);
   margin: 0;
 }
 
-.logo-wrap {
-  margin-bottom: 18px;
+.splash-hero {
+  width: 100%;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--card-border);
+  background: linear-gradient(180deg, rgba(162, 255, 0, 0.04), transparent 85%);
 }
 
-.logo {
+.splash-logo {
   display: block;
-  width: min(200px, 72vw);
+  width: 100%;
   height: auto;
-  max-height: 120px;
-  margin: 0 auto;
+  max-height: min(160px, 38vh);
   object-fit: contain;
+  object-position: center;
   filter: drop-shadow(0 0 10px rgba(162, 255, 0, 0.14)) drop-shadow(0 0 22px rgba(162, 255, 0, 0.06));
   animation: logo-breathe 2.4s ease-in-out infinite;
 }
@@ -69,21 +76,20 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .logo {
+  .splash-logo {
     animation: none;
   }
 }
 
-.title {
-  margin: 0 0 6px;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.splash-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 24px 22px;
   text-align: center;
-}
-
-.title span.accent {
-  color: var(--accent);
 }
 
 .status-line {
@@ -92,19 +98,23 @@ body {
   color: var(--text);
   text-align: center;
   min-height: 1.35em;
+  max-width: 100%;
 }
 
 .status-sub {
-  margin: 0 0 18px;
+  margin: 0 0 16px;
   font-size: 12px;
+  line-height: 1.4;
   color: var(--muted);
   text-align: center;
   min-height: 1.25em;
+  max-width: 100%;
+  word-break: break-word;
 }
 
 .progress-wrap {
   width: 100%;
-  max-width: 280px;
+  max-width: 300px;
   margin-top: 4px;
 }
 

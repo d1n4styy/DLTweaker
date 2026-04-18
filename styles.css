@@ -1213,6 +1213,104 @@ input[type='range'].range::-moz-range-track {
 
 .settings-layout {
   max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-delta-hint {
+  margin: -4px 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.settings-delta-hint strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.settings-delta-hint code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  opacity: 0.9;
+}
+
+.updates-changelog-intro {
+  margin: -4px 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.updates-changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.updates-changelog-item {
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+html[data-theme='light'] .updates-changelog-item {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.updates-changelog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.updates-changelog-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.updates-changelog-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.updates-changelog-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.updates-changelog-link {
+  margin-top: 10px;
+}
+
+.updates-changelog-foot {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.updates-changelog-foot.is-error {
+  color: #f87171;
+}
+
+html[data-theme='light'] .updates-changelog-foot.is-error {
+  color: #dc2626;
 }
 
 .settings-version {
