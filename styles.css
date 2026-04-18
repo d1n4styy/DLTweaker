@@ -1279,6 +1279,15 @@ input[type='range'].range::-moz-range-track {
     max-width: none;
   }
 
+  .settings-col-right {
+    align-items: stretch;
+  }
+
+  .updates-changelog-card {
+    width: 100%;
+    max-width: 100%;
+    align-self: stretch;
+  }
 }
 
 .settings-col-left {
@@ -1293,7 +1302,7 @@ input[type='range'].range::-moz-range-track {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-self: stretch;
 }
 
@@ -1416,6 +1425,7 @@ html[data-theme='light'] .settings-quickpatch-status.is-error {
   max-width: min(100%, 720px);
   flex: 1;
   min-height: 0;
+  align-self: flex-end;
   display: flex;
   flex-direction: column;
   border-left: 3px solid var(--accent);
