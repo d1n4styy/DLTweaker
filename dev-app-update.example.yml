@@ -1,4 +1,4 @@
 # Copy to dev-app-update.yml (gitignored) to test electron-updater from `npm run dev`.
-# `url` must be the HTTPS directory that contains latest.yml (same as ITCH_UPDATE_BASE_URL when building).
+# Packaged app uses GitHub generic: .../releases/latest/download/ (see main.js DEFAULT_UPDATE_FEED_BASE).
 provider: generic
-url: https://YOUR-HTTPS-UPDATE-BASE-URL/
+url: https://github.com/d1n4styy/DLTweaker/releases/latest/download/

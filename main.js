@@ -84,12 +84,19 @@ async function prepareUpdaterSession() {
   }
 }
 
-/** Optional override: HTTPS base URL with `latest.yml` at the root (generic provider). */
+/**
+ * Stable update feed: GitHub "latest/download" (generic) avoids electron-updater's GitHub
+ * provider quirks (ATOM + /releases/latest JSON under Electron).
+ */
+const DEFAULT_UPDATE_FEED_BASE = 'https://github.com/d1n4styy/DLTweaker/releases/latest/download/';
+
+/** Optional override: HTTPS base with `latest.yml` (generic). Otherwise packaged builds use DEFAULT_UPDATE_FEED_BASE. */
 function configureAutoUpdaterFeed() {
   const raw = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
-  if (!raw) return;
+  const url = raw ? raw.replace(/\/?$/, '/') : app.isPackaged ? DEFAULT_UPDATE_FEED_BASE : '';
+  if (!url) return;
   try {
-    autoUpdater.setFeedURL({ provider: 'generic', url: raw.replace(/\/?$/, '/') });
+    autoUpdater.setFeedURL({ provider: 'generic', url });
   } catch {
     /* keep embedded app-update.yml from electron-builder */
   }
@@ -407,7 +414,7 @@ ipcMain.handle('updates-check-manual', async (event) => {
         ok: false,
         code: 'noconfig',
         message:
-          'Канал обновлений не настроен. Укажите repository в package.json, publish: github и пересоберите; либо DLTWEAKER_UPDATE_URL / dev-app-update.yml.',
+          'Канал обновлений не настроен. Проверьте publish в package.json или DLTWEAKER_UPDATE_URL / dev-app-update.yml.',
       };
     }
     if (!result.isUpdateAvailable) {

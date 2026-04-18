@@ -1,6 +1,6 @@
 {
   "name": "deadlock-tweaker",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Deadlock Tweaker — Electron UI",
   "author": "DLTweaker",
   "main": "main.js",
@@ -60,7 +60,12 @@
       "perMachine": false,
       "deleteAppDataOnUninstall": false
     },
-    "publish": ["github"]
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/d1n4styy/DLTweaker/releases/latest/download/"
+      }
+    ]
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
