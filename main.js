@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const { execFile } = require('child_process');
@@ -38,28 +38,6 @@ function sendSplashStatus(payload) {
   bringSplashToFront();
   if (splashWin && !splashWin.isDestroyed()) {
     splashWin.webContents.send('splash-status', payload);
-  }
-}
-
-/**
- * Перед quitAndInstall: окно сплэша на весь workArea с тёмным фоном — меньше «вспышки» рабочего стола
- * между выходом процесса и тихим NSIS (/S). Контент splash.css по центру, по краям фон body.
- */
-function stretchSplashForInstallCover() {
-  if (!splashWin || splashWin.isDestroyed()) return;
-  try {
-    const wa = screen.getDisplayMatching(splashWin.getBounds()).workArea;
-    splashWin.setResizable(true);
-    splashWin.setMinimumSize(1, 1);
-    /* Снять фикс 220×320 (min/max), иначе setBounds на workArea не применится */
-    splashWin.setMaximumSize(16000, 16000);
-    splashWin.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
-    splashWin.setBackgroundColor('#0a0a0a');
-    splashWin.setAlwaysOnTop(true);
-    splashWin.moveTop();
-    splashWin.focus();
-  } catch {
-    /* ignore */
   }
 }
 
@@ -443,9 +421,8 @@ async function runSplashUpdateFlow() {
       percent: 100,
       downloadedTotal: lastUpdateDownloadTotal || undefined,
     });
-    stretchSplashForInstallCover();
     bringSplashToFront();
-    /** Дать кадр на отрисовку растянутого сплэша, затем тихий NSIS (isSilent → /S) + перезапуск. */
+    /** Кадр на отрисовку статуса, затем тихий NSIS (isSilent → /S) + перезапуск. */
     setTimeout(() => {
       try {
         bringSplashToFront();
