@@ -1390,40 +1390,6 @@ html[data-theme='light'] .settings-update-kicker {
   margin-top: 10px;
 }
 
-.settings-quickpatch {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--card-border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.settings-quickpatch-head {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.settings-quickpatch-status {
-  margin: 0;
-  min-height: 1.25em;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--muted);
-}
-
-.settings-quickpatch-status.is-error {
-  color: #f87171;
-}
-
-html[data-theme='light'] .settings-quickpatch-status.is-error {
-  color: #dc2626;
-}
-
 .updates-changelog-intro {
   margin: -4px 0 14px;
   font-size: 13px;

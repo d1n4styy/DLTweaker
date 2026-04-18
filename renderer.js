@@ -884,45 +884,6 @@ async function initQuickPatchStyles() {
   }
 }
 
-function bindSettingsQuickPatch() {
-  const btn = document.getElementById('settings-quickpatch-btn');
-  const st = document.getElementById('settings-quickpatch-status');
-  const api = window.electronAPI;
-  if (!btn || !st || !api || typeof api.quickPatchApply !== 'function') return;
-
-  function setSt(text, err) {
-    st.textContent = text;
-    st.className = 'settings-quickpatch-status' + (err ? ' is-error' : '');
-  }
-
-  btn.addEventListener('click', async () => {
-    setSt('Проверка…', false);
-    btn.disabled = true;
-    try {
-      const r = await api.quickPatchApply();
-      if (!r || !r.ok) {
-        setSt(r?.message || 'Не удалось', true);
-      } else if (r.code === 'applied') {
-        setSt(r.message || 'Патч применён', false);
-        await refreshQuickPatchCss();
-      } else if (r.code === 'uptodate') {
-        setSt(r.message || 'Уже актуально', false);
-      } else if (r.code === 'noop') {
-        setSt(r.message || 'Нет файлов в манифесте', false);
-      } else if (r.code === 'range') {
-        setSt(r.message || 'Не для этой версии', false);
-      } else if (r.code === 'fetch') {
-        setSt(r.message || 'Нет связи с манифестом', true);
-      } else {
-        setSt(r.message || 'Готово', false);
-      }
-    } catch (e) {
-      setSt(e && e.message ? String(e.message) : 'Ошибка', true);
-    }
-    btn.disabled = false;
-  });
-}
-
 function bindSettingsUpdates() {
   const verEl = document.getElementById('settings-app-version');
   const btnCheck = document.getElementById('settings-check-updates');
@@ -1115,7 +1076,6 @@ bindTitlebar();
 initVisualsCompareAsset();
 bindVisualsCompareScrubber();
 void initQuickPatchStyles();
-bindSettingsQuickPatch();
 bindSettingsUpdates();
 startGameStatusPolling();
 
