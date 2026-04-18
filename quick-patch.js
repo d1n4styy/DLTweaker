@@ -198,5 +198,4 @@ async function readOverlayCss(app) {
 module.exports = {
   applyQuickPatch,
   readOverlayCss,
-  MANIFEST_URL,
 };
