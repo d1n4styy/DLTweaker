@@ -201,29 +201,11 @@ function closeSplashProgrammatically() {
   }, 0);
 }
 
-function destroySplashForReuse() {
-  if (!state.splashWin || state.splashWin.isDestroyed()) return;
-  state.splashProgrammaticClose = true;
-  try {
-    state.splashWin.destroy();
-  } catch {
-    try {
-      state.splashWin.close();
-    } catch {
-      /* ignore */
-    }
-  }
-  setTimeout(() => {
-    state.splashProgrammaticClose = false;
-  }, 0);
-  state.splashWin = null;
-}
-
 function createSplashWindow() {
-  if (state.splashWin && !state.splashWin.isDestroyed()) {
-    destroySplashForReuse();
-  }
-  state.splashWin = new BrowserWindow({
+  /** Нельзя сначала уничтожать старый сплэш: между destroy и new будет 0 окон → `window-all-closed` → `app.quit()`. */
+  const prevSplash = state.splashWin && !state.splashWin.isDestroyed() ? state.splashWin : null;
+
+  const win = new BrowserWindow({
     useContentSize: true,
     width: SPLASH_CONTENT_WIDTH,
     height: SPLASH_CONTENT_HEIGHT,
@@ -249,11 +231,13 @@ function createSplashWindow() {
       backgroundThrottling: false,
     },
   });
-  const splashRef = state.splashWin;
-  state.splashWin.on('closed', () => {
+  state.splashWin = win;
+  const splashRef = win;
+
+  win.on('closed', () => {
     if (state.splashWin === splashRef) state.splashWin = null;
   });
-  state.splashWin.on('close', () => {
+  win.on('close', () => {
     if (state.splashProgrammaticClose) return;
     if (state.splashWin !== splashRef) return;
     state.splashUserAborted = true;
@@ -283,17 +267,68 @@ function createSplashWindow() {
       });
     }
   });
-  state.splashWin.once('ready-to-show', () => {
-    if (!state.splashWin || state.splashWin.isDestroyed()) return;
+
+  let splashShowTimer = null;
+  const cancelSplashShowTimer = () => {
+    if (splashShowTimer) {
+      clearTimeout(splashShowTimer);
+      splashShowTimer = null;
+    }
+  };
+
+  const tryShowSplash = () => {
+    if (win.isDestroyed()) return;
     try {
-      state.splashWin.setContentSize(SPLASH_CONTENT_WIDTH, SPLASH_CONTENT_HEIGHT);
-      state.splashWin.center();
+      win.setContentSize(SPLASH_CONTENT_WIDTH, SPLASH_CONTENT_HEIGHT);
+      win.center();
     } catch {
       /* ignore */
     }
-    state.splashWin.show();
+    try {
+      win.show();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  splashShowTimer = setTimeout(() => {
+    splashShowTimer = null;
+    tryShowSplash();
+  }, 2500);
+
+  win.once('ready-to-show', () => {
+    cancelSplashShowTimer();
+    tryShowSplash();
   });
-  state.splashWin.loadFile('splash.html');
+
+  win.webContents.once('did-finish-load', () => {
+    cancelSplashShowTimer();
+    tryShowSplash();
+  });
+
+  win.webContents.once('did-fail-load', (_event, _code, _desc, _url, isMainFrame) => {
+    if (!isMainFrame) return;
+    cancelSplashShowTimer();
+    tryShowSplash();
+  });
+
+  win.loadFile('splash.html');
+
+  if (prevSplash) {
+    state.splashProgrammaticClose = true;
+    try {
+      prevSplash.destroy();
+    } catch {
+      try {
+        prevSplash.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    setTimeout(() => {
+      state.splashProgrammaticClose = false;
+    }, 0);
+  }
 }
 
 async function waitForSplashLoad() {
@@ -302,8 +337,8 @@ async function waitForSplashLoad() {
 
   const splashLoaded = () => {
     try {
-      const u = wc.getURL() || '';
-      return !wc.isLoading() && u.includes('splash.html');
+      const u = (wc.getURL() || '').toLowerCase();
+      return !wc.isLoading() && (u.includes('splash.html') || u.includes('splash%2ehtml'));
     } catch {
       return false;
     }

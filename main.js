@@ -43,16 +43,30 @@ if (!app.requestSingleInstanceLock()) {
       } catch {
         /* ignore */
       }
-      if (process.platform === 'win32') {
+      try {
+        if (process.platform === 'win32') {
+          try {
+            Menu.setApplicationMenu(null);
+          } catch {
+            /* ignore */
+          }
+        }
+        applicationMain.registerAppIpc();
+        updaterSplash.registerUpdaterIpc();
+        updaterSplash.startSplashThenMain();
+      } catch (err) {
         try {
-          Menu.setApplicationMenu(null);
+          console.error('[DLTweaker] startup init failed:', err);
+        } catch {
+          /* ignore */
+        }
+        try {
+          const { dialog } = require('electron');
+          dialog.showErrorBox('Deadlock Tweaker', `Ошибка запуска:\n${err && err.message ? String(err.message) : String(err)}`);
         } catch {
           /* ignore */
         }
       }
-      applicationMain.registerAppIpc();
-      updaterSplash.registerUpdaterIpc();
-      updaterSplash.startSplashThenMain();
     })
     .catch((err) => {
       try {
@@ -64,11 +78,14 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
-      try {
-        app.quit();
-      } catch {
-        /* ignore */
-      }
+      setTimeout(() => {
+        try {
+          if (BrowserWindow.getAllWindows().length > 0) return;
+          app.quit();
+        } catch {
+          /* ignore */
+        }
+      }, 75);
     }
   });
 
