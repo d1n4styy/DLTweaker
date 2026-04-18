@@ -1,1 +1,12 @@
-/* Слой быстрых патчей: правки UI/текстов подгружаются отдельно от полного NSIS. */
+/* Quick patch: скрыть блок «Быстрые патчи» на вкладке обновлений (разметка могла остаться в старых сборках). */
+.settings-quickpatch,
+.settings-quickpatch-head,
+#settings-quickpatch-label,
+#settings-quickpatch-btn,
+#settings-quickpatch-status {
+  display: none !important;
+}
+
+.settings-updates-card .settings-update-msg {
+  margin-bottom: 0;
+}
