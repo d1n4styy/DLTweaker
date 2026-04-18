@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const { execFile } = require('child_process');
@@ -12,6 +12,8 @@ const PROFILES_FILE = 'profiles.json';
 
 let splashWin = null;
 let mainWin = null;
+/** Сплэш не закрываем до первой отрисовки основного окна (см. createMainWindow). */
+let mainWinSplashCloseScheduled = false;
 /** @type {Array<[string, (...args: any[]) => void]>} */
 let updaterListeners = [];
 
@@ -19,9 +21,43 @@ function profilesFilePath() {
   return path.join(app.getPath('userData'), PROFILES_FILE);
 }
 
+/** Пока нет главного окна — держим сплэш поверх, чтобы его не «перекрывали» и не казалось, что он пропал. */
+function bringSplashToFront() {
+  if (!splashWin || splashWin.isDestroyed()) return;
+  try {
+    if (!splashWin.isVisible()) splashWin.show();
+    splashWin.setAlwaysOnTop(true);
+    splashWin.moveTop();
+    splashWin.focus();
+  } catch {
+    /* ignore */
+  }
+}
+
 function sendSplashStatus(payload) {
+  bringSplashToFront();
   if (splashWin && !splashWin.isDestroyed()) {
     splashWin.webContents.send('splash-status', payload);
+  }
+}
+
+/**
+ * Перед quitAndInstall: окно сплэша на весь workArea с тёмным фоном — меньше «вспышки» рабочего стола
+ * между выходом процесса и тихим NSIS (/S). Контент splash.css по центру, по краям фон body.
+ */
+function stretchSplashForInstallCover() {
+  if (!splashWin || splashWin.isDestroyed()) return;
+  try {
+    const wa = screen.getDisplayMatching(splashWin.getBounds()).workArea;
+    splashWin.setResizable(true);
+    splashWin.setMinimumSize(1, 1);
+    splashWin.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
+    splashWin.setBackgroundColor('#0a0a0a');
+    splashWin.setAlwaysOnTop(true);
+    splashWin.moveTop();
+    splashWin.focus();
+  } catch {
+    /* ignore */
   }
 }
 
@@ -109,12 +145,13 @@ async function getBundledReleaseNotesMap() {
   return cachedBundledReleaseNotes;
 }
 
-/** Generic `latest/download` — fallback если GitHub API/провайдер недоступен. */
+/** Generic `latest/download` — прямой `latest.yml` последнего релиза (надёжнее, чем GitHub-провайдер). */
 const GENERIC_UPDATE_FEED_BASE = 'https://github.com/d1n4styy/DLTweaker/releases/latest/download/';
 
 /**
- * Сборка: первым в `publish` указан GitHub — дифференциальная загрузка по blockmap (не весь exe, если возможно).
- * Принудительно только generic: `DLTWEAKER_USE_GENERIC_UPDATER=1`.
+ * Канал обновлений (сборка): по умолчанию generic (`latest.yml`); при сбое — провайдер GitHub.
+ * Только generic (без второй попытки): `DLTWEAKER_USE_GENERIC_UPDATER=1`.
+ * Сначала GitHub, потом generic: `DLTWEAKER_USE_GITHUB_UPDATER=1` (старое поведение).
  * Свой хост: `DLTWEAKER_UPDATE_URL` (HTTPS, `latest.yml` в корне).
  */
 function configureAutoUpdaterFeed() {
@@ -129,37 +166,50 @@ function configureAutoUpdaterFeed() {
   }
   if (!app.isPackaged) return;
   try {
-    if ((process.env.DLTWEAKER_USE_GENERIC_UPDATER || '').trim() === '1') {
-      autoUpdater.setFeedURL({ provider: 'generic', url: GENERIC_UPDATE_FEED_BASE });
-    } else {
+    if ((process.env.DLTWEAKER_USE_GITHUB_UPDATER || '').trim() === '1') {
       autoUpdater.setFeedURL({ provider: 'github', owner: GH_UPDATES_OWNER, repo: GH_UPDATES_REPO });
+    } else {
+      autoUpdater.setFeedURL({ provider: 'generic', url: GENERIC_UPDATE_FEED_BASE });
     }
   } catch {
     /* keep embedded app-update.yml from electron-builder */
   }
 }
 
-/** Сначала GitHub (дельты), при ошибке — generic latest/download. */
+/** По умолчанию generic (`latest.yml`), затем GitHub; порядок можно поменять переменными окружения. */
 async function checkForUpdatesWithFeedFallback() {
   const customUrl = (process.env.DLTWEAKER_UPDATE_URL || '').trim();
   if (customUrl || !app.isPackaged) {
     return await autoUpdater.checkForUpdates();
   }
-  const preferGeneric = (process.env.DLTWEAKER_USE_GENERIC_UPDATER || '').trim() === '1';
-  configureAutoUpdaterFeed();
-  applyAutoUpdaterDefaults();
-  try {
-    return await autoUpdater.checkForUpdates();
-  } catch (firstErr) {
-    if (preferGeneric) throw firstErr;
+  const genericOnly = (process.env.DLTWEAKER_USE_GENERIC_UPDATER || '').trim() === '1';
+  const githubFirst = (process.env.DLTWEAKER_USE_GITHUB_UPDATER || '').trim() === '1';
+
+  /** @type {Array<'generic' | 'github'>} */
+  let feedOrder;
+  if (genericOnly) {
+    feedOrder = ['generic'];
+  } else if (githubFirst) {
+    feedOrder = ['github', 'generic'];
+  } else {
+    feedOrder = ['generic', 'github'];
+  }
+
+  let lastErr;
+  for (const kind of feedOrder) {
     try {
-      autoUpdater.setFeedURL({ provider: 'generic', url: GENERIC_UPDATE_FEED_BASE });
+      if (kind === 'generic') {
+        autoUpdater.setFeedURL({ provider: 'generic', url: GENERIC_UPDATE_FEED_BASE });
+      } else {
+        autoUpdater.setFeedURL({ provider: 'github', owner: GH_UPDATES_OWNER, repo: GH_UPDATES_REPO });
+      }
       applyAutoUpdaterDefaults();
       return await autoUpdater.checkForUpdates();
-    } catch {
-      throw firstErr;
+    } catch (e) {
+      lastErr = e;
     }
   }
+  throw lastErr;
 }
 
 function applyAutoUpdaterDefaults() {
@@ -170,15 +220,41 @@ function applyAutoUpdaterDefaults() {
   autoUpdater.disableWebInstaller = true;
 }
 
+/** Splash: больше высоты героя — иначе max-height:100% не даёт логотипу вырасти. */
+const SPLASH_CONTENT_WIDTH = 220;
+const SPLASH_CONTENT_HEIGHT = 320;
+
+/**
+ * Основное окно: фиксированный размер клиентской области (1280×820).
+ * Не менять при доработках сплэша, splash.css / splash.html или превью — только осознанно под макет приложения.
+ */
+const MAIN_WINDOW_WIDTH = 1280;
+const MAIN_WINDOW_HEIGHT = 820;
+/** Windows: системная рамка и кнопки (сворачивание / размер / закрытие) — без кастомного titlebar. */
+const MAIN_WIN_NATIVE_FRAME = process.platform === 'win32';
+
+/** Минимальный размер макета; разворот — нативный maximize/unmaximize (анимация Windows). */
+function setupMainWindowSizing(win) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.setMinimumSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+    win.setResizable(true);
+    win.setMaximizable(true);
+    win.setFullScreenable(true);
+  } catch {
+    /* ignore */
+  }
+}
+
 function createSplashWindow() {
   splashWin = new BrowserWindow({
-    width: 520,
-    height: 500,
+    width: SPLASH_CONTENT_WIDTH,
+    height: SPLASH_CONTENT_HEIGHT,
     frame: false,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
+    resizable: true,
+    minimizable: true,
+    maximizable: true,
+    fullscreenable: true,
     show: false,
     center: true,
     alwaysOnTop: true,
@@ -194,7 +270,16 @@ function createSplashWindow() {
   splashWin.on('closed', () => {
     splashWin = null;
   });
-  splashWin.once('ready-to-show', () => splashWin.show());
+  splashWin.once('ready-to-show', () => {
+    if (!splashWin || splashWin.isDestroyed()) return;
+    try {
+      splashWin.setContentSize(SPLASH_CONTENT_WIDTH, SPLASH_CONTENT_HEIGHT);
+      splashWin.center();
+    } catch {
+      /* ignore */
+    }
+    splashWin.show();
+  });
   splashWin.loadFile('splash.html');
 }
 
@@ -203,12 +288,17 @@ function createMainWindow() {
     if (splashWin && !splashWin.isDestroyed()) splashWin.close();
     return;
   }
+  mainWinSplashCloseScheduled = false;
   mainWin = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 1024,
-    minHeight: 680,
-    frame: false,
+    width: MAIN_WINDOW_WIDTH,
+    height: MAIN_WINDOW_HEIGHT,
+    minWidth: MAIN_WINDOW_WIDTH,
+    minHeight: MAIN_WINDOW_HEIGHT,
+    resizable: true,
+    maximizable: true,
+    fullscreenable: true,
+    frame: MAIN_WIN_NATIVE_FRAME,
+    title: 'Deadlock Tweaker',
     icon: path.join(__dirname, 'assets', 'logo.png'),
     backgroundColor: '#0a0a0a',
     show: false,
@@ -219,22 +309,39 @@ function createMainWindow() {
     },
   });
 
+  setupMainWindowSizing(mainWin);
+
   mainWin.once('ready-to-show', () => {
-    mainWin.show();
-    if (splashWin && !splashWin.isDestroyed()) {
-      splashWin.close();
+    if (!mainWin || mainWin.isDestroyed()) return;
+    try {
+      mainWin.setContentSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+      mainWin.setMinimumSize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
+    } catch {
+      /* ignore */
     }
+    mainWin.show();
+    bringSplashToFront();
   });
   mainWin.loadFile('index.html');
   mainWin.webContents.once('did-finish-load', () => {
+    const w = mainWin;
+    if (!mainWinSplashCloseScheduled) {
+      mainWinSplashCloseScheduled = true;
+      setTimeout(() => {
+        if (splashWin && !splashWin.isDestroyed()) {
+          splashWin.close();
+        }
+      }, 100);
+    }
     void applyQuickPatch(app, { silent: true }).then((r) => {
-      if (r && r.ok && r.code === 'applied' && mainWin && !mainWin.isDestroyed()) {
-        mainWin.webContents.send('quick-patch-updated');
+      if (r && r.ok && r.code === 'applied' && w && !w.isDestroyed()) {
+        w.webContents.send('quick-patch-updated');
       }
     });
   });
   mainWin.on('closed', () => {
     mainWin = null;
+    mainWinSplashCloseScheduled = false;
   });
 }
 
@@ -265,17 +372,7 @@ async function openMainAfterSplash() {
 async function runSplashUpdateFlow() {
   await waitForSplashLoad();
   await sleep(120);
-
-  if (app.isPackaged && isRelaunchAfterNsisUpdate()) {
-    sendSplashStatus({
-      phase: 'updatedone',
-      message: 'Обновление завершено',
-      percent: 100,
-    });
-    await sleep(1850);
-    await openMainAfterSplash();
-    return;
-  }
+  bringSplashToFront();
 
   sendSplashStatus({ phase: 'checking', message: 'Проверка обновлений…' });
 
@@ -331,13 +428,17 @@ async function runSplashUpdateFlow() {
       percent: 100,
       downloadedTotal: lastUpdateDownloadTotal || undefined,
     });
+    stretchSplashForInstallCover();
+    bringSplashToFront();
+    /** Дать кадр на отрисовку растянутого сплэша, затем тихий NSIS (isSilent → /S) + перезапуск. */
     setTimeout(() => {
       try {
+        bringSplashToFront();
         autoUpdater.quitAndInstall(true, true);
       } catch {
         void openMainAfterSplash();
       }
-    }, 1600);
+    }, 380);
   };
 
   addUpdaterListener('update-available', (info) => {
@@ -367,7 +468,7 @@ async function runSplashUpdateFlow() {
 
   addUpdaterListener('update-not-available', () => {
     if (settled) return;
-    sendSplashStatus({ phase: 'uptodate', message: 'У вас установлена последняя версия' });
+    sendSplashStatus({ phase: 'uptodate', message: 'Установлена последняя версия' });
     setTimeout(() => {
       void goMain();
     }, 550);
@@ -412,6 +513,11 @@ async function runSplashUpdateFlow() {
 }
 
 function startSplashThenMain() {
+  /** После NSIS второй запуск с --updated: без второго сплэша — сразу главное окно (меньше миганий). */
+  if (app.isPackaged && isRelaunchAfterNsisUpdate()) {
+    createMainWindow();
+    return;
+  }
   createSplashWindow();
   void runSplashUpdateFlow();
 }
@@ -435,6 +541,13 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    if (MAIN_WIN_NATIVE_FRAME) {
+      try {
+        Menu.setApplicationMenu(null);
+      } catch {
+        /* ignore */
+      }
+    }
     startSplashThenMain();
   });
 
@@ -457,7 +570,8 @@ ipcMain.on('window-minimize', (e) => {
 
 ipcMain.on('window-maximize', (e) => {
   const w = BrowserWindow.fromWebContents(e.sender);
-  if (!w) return;
+  if (!w || w.isDestroyed()) return;
+  /** Нативный maximize/unmaximize — системная анимация Windows (DWM), без ручного setBounds. */
   if (w.isMaximized()) w.unmaximize();
   else w.maximize();
 });
@@ -467,7 +581,9 @@ ipcMain.on('window-close', (e) => {
 });
 
 ipcMain.handle('window-is-maximized', (e) => {
-  return BrowserWindow.fromWebContents(e.sender)?.isMaximized() ?? false;
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w || w.isDestroyed()) return false;
+  return w.isMaximized();
 });
 
 ipcMain.handle('profiles-load', async () => {
