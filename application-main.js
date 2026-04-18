@@ -6,6 +6,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { applyQuickPatch, checkQuickPatchOnly, readOverlayCss } = require('./quick-patch');
+const startupTrace = require('./startup-trace');
 
 const execFileAsync = promisify(execFile);
 
@@ -102,6 +103,7 @@ function setupMainWindowSizing(win) {
 }
 
 function createMainWindow() {
+  startupTrace.trace('mainWin: createMainWindow enter');
   if (state.splashUserAborted) return;
   if (state.mainWin && !state.mainWin.isDestroyed()) {
     if (state.splashWin && !state.splashWin.isDestroyed()) splashApi.closeSplashProgrammatically();

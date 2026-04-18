@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { sleep } = require('./electron-utils');
 const { applyQuickPatch } = require('./quick-patch');
+const startupTrace = require('./startup-trace');
 
 /** @type {typeof import('./electron-app-state')} */
 let state;
@@ -218,7 +219,7 @@ function createSplashWindow() {
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    show: false,
+    show: true,
     center: true,
     alwaysOnTop: true,
     icon: path.join(__dirname, 'assets', 'logo.png'),
@@ -233,6 +234,7 @@ function createSplashWindow() {
   });
   state.splashWin = win;
   const splashRef = win;
+  startupTrace.trace('splash: BrowserWindow created (show=true)');
 
   win.on('closed', () => {
     if (state.splashWin === splashRef) state.splashWin = null;
@@ -240,9 +242,27 @@ function createSplashWindow() {
   win.on('close', () => {
     if (state.splashProgrammaticClose) return;
     if (state.splashWin !== splashRef) return;
+
+    const noMain = !state.mainWin || state.mainWin.isDestroyed();
+    if (noMain && state.splashBootstrapActive) {
+      startupTrace.trace(
+        'splash: close during bootstrap (краш рендерера / сбой окна) — открываем главное окно вместо выхода',
+      );
+      setImmediate(() => {
+        try {
+          createMainWindowFn();
+        } catch (e) {
+          startupTrace.traceErr('splash: createMainWindow after splash failure', e);
+        } finally {
+          state.splashBootstrapActive = false;
+        }
+      });
+      return;
+    }
+
     state.splashUserAborted = true;
     clearUpdaterListeners();
-    if (!state.mainWin || state.mainWin.isDestroyed()) {
+    if (noMain) {
       setImmediate(() => {
         try {
           app.quit();
@@ -409,7 +429,10 @@ async function drainSplashQuickPatch(fastResume, awaitFull) {
 async function openMainAfterSplash(fastResume = false) {
   try {
     state.settingsSplashUpdateBusy = false;
-    if (state.splashUserAborted) return;
+    if (state.splashUserAborted) {
+      state.splashBootstrapActive = false;
+      return;
+    }
     if (state.mainWin && !state.mainWin.isDestroyed()) {
       await drainSplashQuickPatch(fastResume, true);
       if (state.splashWin && !state.splashWin.isDestroyed()) closeSplashProgrammatically();
@@ -420,15 +443,26 @@ async function openMainAfterSplash(fastResume = false) {
         /* ignore */
       }
       notifyUpdatesFlowResumedMainFn();
+      state.splashBootstrapActive = false;
       return;
     }
     sendSplashStatus({ phase: 'launching', message: 'Запуск приложения…' });
     await sleep(fastResume ? 120 : 280);
-    if (state.splashUserAborted) return;
+    if (state.splashUserAborted) {
+      state.splashBootstrapActive = false;
+      return;
+    }
     await drainSplashQuickPatch(fastResume, false);
-    if (state.splashUserAborted) return;
+    if (state.splashUserAborted) {
+      state.splashBootstrapActive = false;
+      return;
+    }
+    startupTrace.trace('splash: calling createMainWindow');
     createMainWindowFn();
+    state.splashBootstrapActive = false;
   } catch (err) {
+    state.splashBootstrapActive = false;
+    startupTrace.traceErr('openMainAfterSplash', err);
     const msg = err && err.message ? String(err.message) : String(err);
     try {
       dialog.showErrorBox('Deadlock Tweaker', `Не удалось открыть главное окно:\n${msg}`);
@@ -440,21 +474,31 @@ async function openMainAfterSplash(fastResume = false) {
 
 async function runSplashUpdateFlow(opts = {}) {
   const fast = opts.fastIntro === true;
+  startupTrace.trace(`splash: runSplashUpdateFlow begin (fast=${fast})`);
   clearUpdaterListeners();
   await waitForSplashLoad();
-  if (state.splashUserAborted) return;
+  if (state.splashUserAborted) {
+    state.splashBootstrapActive = false;
+    return;
+  }
   if (!state.splashWin || state.splashWin.isDestroyed()) {
     void openMainAfterSplash(fast);
     return;
   }
   await waitForSplashIpcReady();
-  if (state.splashUserAborted) return;
+  if (state.splashUserAborted) {
+    state.splashBootstrapActive = false;
+    return;
+  }
   if (!state.splashWin || state.splashWin.isDestroyed()) {
     void openMainAfterSplash(fast);
     return;
   }
   await sleep(fast ? 96 : 80);
-  if (state.splashUserAborted) return;
+  if (state.splashUserAborted) {
+    state.splashBootstrapActive = false;
+    return;
+  }
   if (!state.splashWin || state.splashWin.isDestroyed()) {
     void openMainAfterSplash(fast);
     return;
@@ -510,7 +554,10 @@ async function runSplashUpdateFlow(opts = {}) {
   };
 
   const goMain = async () => {
-    if (state.splashUserAborted) return;
+    if (state.splashUserAborted) {
+      state.splashBootstrapActive = false;
+      return;
+    }
     if (settled) return;
     settled = true;
     done();
@@ -590,7 +637,10 @@ async function runSplashUpdateFlow(opts = {}) {
   });
 
   try {
-    if (state.splashUserAborted) return;
+    if (state.splashUserAborted) {
+      state.splashBootstrapActive = false;
+      return;
+    }
     if (!state.splashWin || state.splashWin.isDestroyed()) {
       if (!settled) {
         settled = true;
@@ -624,7 +674,25 @@ async function runSplashUpdateFlow(opts = {}) {
 function startSplashThenMain() {
   state.splashUserAborted = false;
   state.settingsSplashUpdateBusy = false;
-  createSplashWindow();
+  state.splashBootstrapActive = true;
+  startupTrace.trace('splash: startSplashThenMain');
+  try {
+    createSplashWindow();
+  } catch (e) {
+    state.splashBootstrapActive = false;
+    startupTrace.traceErr('splash: createSplashWindow threw', e);
+    try {
+      dialog.showErrorBox('Deadlock Tweaker', `Сплэш: ${e && e.message ? String(e.message) : String(e)}`);
+    } catch {
+      /* ignore */
+    }
+    try {
+      createMainWindowFn();
+    } catch (e2) {
+      startupTrace.traceErr('splash: createMainWindow fallback failed', e2);
+    }
+    return;
+  }
   void runSplashUpdateFlow();
 }
 

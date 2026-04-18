@@ -1,6 +1,6 @@
 {
   "name": "deadlock-tweaker",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "description": "Deadlock Tweaker — Electron UI",
   "author": "DLTweaker",
   "main": "main.js",
@@ -12,6 +12,7 @@
     "start": "electronmon .",
     "dev": "electronmon .",
     "start:once": "electron .",
+    "start:debug": "electron . --enable-logging",
     "dist": "electron-builder --win --publish never",
     "dist:publish": "electron-builder --win --publish always",
     "dist:itch": "node scripts/build-with-itch-url.cjs",
@@ -34,8 +35,9 @@
     "compression": "normal",
     "asar": true,
     "files": [
-      "main.js",
-      "electron-app-state.js",
+    "main.js",
+    "startup-trace.js",
+    "electron-app-state.js",
       "electron-utils.js",
       "updater-splash.js",
       "application-main.js",
