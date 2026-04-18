@@ -125,6 +125,29 @@ body {
   transition: width 0.22s ease-out;
 }
 
+.progress.indeterminate .progress-fill {
+  width: 38%;
+  transition: none;
+  animation: indeterminate-sweep 1.05s ease-in-out infinite;
+}
+
+@keyframes indeterminate-sweep {
+  0% {
+    margin-left: 0;
+  }
+  100% {
+    margin-left: 62%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress.indeterminate .progress-fill {
+    animation: none;
+    width: 100%;
+    opacity: 0.35;
+  }
+}
+
 .spinner-row {
   display: flex;
   align-items: center;

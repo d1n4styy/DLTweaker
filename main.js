@@ -28,6 +28,11 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** NSIS passes `--updated` when launching the app after an update (see electron-builder `StartApp` macro). */
+function isRelaunchAfterNsisUpdate() {
+  return process.argv.some((a) => a === '--updated' || /^--updated=/i.test(a));
+}
+
 async function windowsImageRunning(exeName) {
   try {
     const { stdout } = await execFileAsync('tasklist', ['/FI', `IMAGENAME eq ${exeName}`, '/NH'], {
@@ -106,6 +111,7 @@ function applyAutoUpdaterDefaults() {
   autoUpdater.autoDownload = true;
   autoUpdater.allowDowngrade = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.disableDifferentialDownload = false;
 }
 
 function createSplashWindow() {
@@ -196,6 +202,18 @@ async function openMainAfterSplash() {
 async function runSplashUpdateFlow() {
   await waitForSplashLoad();
   await sleep(120);
+
+  if (app.isPackaged && isRelaunchAfterNsisUpdate()) {
+    sendSplashStatus({
+      phase: 'updatedone',
+      message: 'Обновление завершено',
+      percent: 100,
+    });
+    await sleep(1850);
+    await openMainAfterSplash();
+    return;
+  }
+
   sendSplashStatus({ phase: 'checking', message: 'Проверка обновлений…' });
 
   const runUpdater = await prepareUpdaterSession();
@@ -209,6 +227,7 @@ async function runSplashUpdateFlow() {
   applyAutoUpdaterDefaults();
 
   let settled = false;
+  let lastUpdateDownloadTotal = 0;
   let flowGuard = setTimeout(() => {
     if (settled) return;
     settled = true;
@@ -240,14 +259,20 @@ async function runSplashUpdateFlow() {
     settled = true;
     done();
     clearUpdaterListeners();
-    sendSplashStatus({ phase: 'installing', message: 'Применение обновления…' });
+    sendSplashStatus({
+      phase: 'installing',
+      message: 'Применение обновления…',
+      installIndeterminate: true,
+      percent: 100,
+      downloadedTotal: lastUpdateDownloadTotal || undefined,
+    });
     setTimeout(() => {
       try {
-        autoUpdater.quitAndInstall(false, true);
+        autoUpdater.quitAndInstall(true, true);
       } catch {
         void openMainAfterSplash();
       }
-    }, 800);
+    }, 1600);
   };
 
   addUpdaterListener('update-available', (info) => {
@@ -258,10 +283,16 @@ async function runSplashUpdateFlow() {
   });
 
   addUpdaterListener('download-progress', (p) => {
+    if (typeof p.total === 'number' && p.total > 0) {
+      lastUpdateDownloadTotal = p.total;
+    }
     sendSplashStatus({
       phase: 'downloading',
       message: `Загрузка обновления… ${Math.round(p.percent)}%`,
       percent: p.percent,
+      transferred: p.transferred,
+      total: p.total,
+      bytesPerSecond: p.bytesPerSecond,
     });
   });
 
@@ -439,7 +470,7 @@ ipcMain.handle('updates-check-manual', async (event) => {
     if (choice.response === 0) {
       setImmediate(() => {
         try {
-          autoUpdater.quitAndInstall(false, true);
+          autoUpdater.quitAndInstall(true, true);
         } catch {
           /* ignore */
         }

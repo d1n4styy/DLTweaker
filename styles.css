@@ -1535,14 +1535,6 @@ html[data-theme='light'] .visuals-compare-popover-inner {
   border-radius: var(--radius-sm);
 }
 
-.visuals-compare-filename {
-  font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
-  font-size: 11px;
-  color: var(--text);
-  opacity: 0.88;
-  word-break: break-all;
-}
-
 @media (max-width: 640px) {
   .visuals-compare-btn-text {
     display: none;
