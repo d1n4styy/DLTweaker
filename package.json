@@ -1,6 +1,6 @@
 {
   "name": "deadlock-tweaker",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Deadlock Tweaker — Electron UI",
   "author": "DLTweaker",
   "main": "main.js",
