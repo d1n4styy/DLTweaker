@@ -12,6 +12,8 @@ const PROFILES_FILE = 'profiles.json';
 
 let splashWin = null;
 let mainWin = null;
+/** Защита от повторного «Скачать через сплэш», пока не вернулись в main. */
+let settingsSplashUpdateBusy = false;
 /** Сплэш не закрываем до первой отрисовки основного окна (см. createMainWindow). */
 let mainWinSplashCloseScheduled = false;
 /** @type {Array<[string, (...args: any[]) => void]>} */
@@ -227,6 +229,18 @@ function setupMainWindowSizing(win) {
 }
 
 function createSplashWindow() {
+  if (splashWin && !splashWin.isDestroyed()) {
+    try {
+      splashWin.destroy();
+    } catch {
+      try {
+        splashWin.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    splashWin = null;
+  }
   splashWin = new BrowserWindow({
     useContentSize: true,
     width: SPLASH_CONTENT_WIDTH,
@@ -352,27 +366,47 @@ async function waitForSplashLoad() {
   });
 }
 
-async function openMainAfterSplash() {
+function notifyUpdatesFlowResumedMain() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  try {
+    mainWin.webContents.send('updates-flow-resumed');
+  } catch {
+    /* ignore */
+  }
+}
+
+async function openMainAfterSplash(fastResume = false) {
+  settingsSplashUpdateBusy = false;
   if (mainWin && !mainWin.isDestroyed()) {
     if (splashWin && !splashWin.isDestroyed()) splashWin.close();
+    try {
+      mainWin.show();
+      mainWin.focus();
+    } catch {
+      /* ignore */
+    }
+    notifyUpdatesFlowResumedMain();
     return;
   }
   sendSplashStatus({ phase: 'launching', message: 'Запуск приложения…' });
-  await sleep(380);
+  await sleep(fastResume ? 120 : 280);
   createMainWindow();
 }
 
-async function runSplashUpdateFlow() {
+/** @param {{ fastIntro?: boolean }} [opts] */
+async function runSplashUpdateFlow(opts = {}) {
+  const fast = opts.fastIntro === true;
+  clearUpdaterListeners();
   await waitForSplashLoad();
-  await sleep(120);
+  await sleep(fast ? 0 : 50);
   bringSplashToFront();
 
   sendSplashStatus({ phase: 'checking', message: 'Проверка обновлений…' });
 
   const runUpdater = await prepareUpdaterSession();
   if (!runUpdater) {
-    await sleep(120);
-    await openMainAfterSplash();
+    await sleep(fast ? 0 : 50);
+    await openMainAfterSplash(fast);
     return;
   }
 
@@ -383,6 +417,7 @@ async function runSplashUpdateFlow() {
   /** After `checkForUpdates` (incl. retries) finishes — avoids treating check-time `error` as fatal (electron-updater emits before throw). */
   let postCheckComplete = false;
   let lastUpdateDownloadTotal = 0;
+  const flowTimeoutMs = fast ? 22000 : 28000;
   let flowGuard = setTimeout(() => {
     if (settled) return;
     settled = true;
@@ -390,9 +425,9 @@ async function runSplashUpdateFlow() {
     clearUpdaterListeners();
     sendSplashStatus({ phase: 'offline', message: 'Таймаут проверки — запуск без обновления' });
     setTimeout(() => {
-      void openMainAfterSplash();
-    }, 800);
-  }, 32000);
+      void openMainAfterSplash(fast);
+    }, fast ? 450 : 650);
+  }, flowTimeoutMs);
 
   const done = () => {
     if (flowGuard) {
@@ -406,7 +441,7 @@ async function runSplashUpdateFlow() {
     settled = true;
     done();
     clearUpdaterListeners();
-    await openMainAfterSplash();
+    await openMainAfterSplash(fast);
   };
 
   const onDownloaded = () => {
@@ -428,7 +463,7 @@ async function runSplashUpdateFlow() {
         bringSplashToFront();
         autoUpdater.quitAndInstall(true, true);
       } catch {
-        void openMainAfterSplash();
+        void openMainAfterSplash(fast);
       }
     }, 380);
   };
@@ -463,7 +498,7 @@ async function runSplashUpdateFlow() {
     sendSplashStatus({ phase: 'uptodate', message: 'Установлена последняя версия' });
     setTimeout(() => {
       void goMain();
-    }, 550);
+    }, fast ? 280 : 420);
   });
 
   addUpdaterListener('error', (err) => {
@@ -478,8 +513,8 @@ async function runSplashUpdateFlow() {
       detail: hint || undefined,
     });
     setTimeout(() => {
-      void openMainAfterSplash();
-    }, 850);
+      void openMainAfterSplash(fast);
+    }, fast ? 500 : 700);
   });
 
   try {
@@ -496,8 +531,8 @@ async function runSplashUpdateFlow() {
         detail: hint || undefined,
       });
       setTimeout(() => {
-        void openMainAfterSplash();
-      }, 800);
+        void openMainAfterSplash(fast);
+      }, fast ? 450 : 650);
     }
   } finally {
     postCheckComplete = true;
@@ -686,6 +721,7 @@ const NO_UPDATE_CHANNEL_MSG =
 ipcMain.handle('updates-check-only', async () => {
   const gate = await manualUpdaterDevGate();
   if (gate) return gate;
+  clearUpdaterListeners();
   configureAutoUpdaterFeed();
   applyAutoUpdaterDefaults();
   const prevAuto = autoUpdater.autoDownload;
@@ -717,10 +753,55 @@ ipcMain.handle('updates-check-only', async () => {
   }
 });
 
+/**
+ * Из настроек: скрыть main, показать сплэш и тот же поток, что при старте (проверка + загрузка + quitAndInstall).
+ * Быстрее старта: `fastIntro` внутри runSplashUpdateFlow.
+ */
+ipcMain.handle('updates-download-via-splash', async () => {
+  const gate = await manualUpdaterDevGate();
+  if (gate) return gate;
+  if (!app.isPackaged) {
+    return {
+      ok: false,
+      code: 'dev',
+      message: 'В режиме разработки используйте dev-app-update.yml или кнопку скачивания в окне.',
+    };
+  }
+  if (!mainWin || mainWin.isDestroyed()) {
+    return { ok: false, code: 'error', message: 'Нет главного окна' };
+  }
+  if (settingsSplashUpdateBusy) {
+    return { ok: false, code: 'busy', message: 'Обновление уже запущено' };
+  }
+  settingsSplashUpdateBusy = true;
+  clearUpdaterListeners();
+  try {
+    mainWin.hide();
+  } catch {
+    /* ignore */
+  }
+  try {
+    createSplashWindow();
+    await waitForSplashLoad();
+  } catch (e) {
+    settingsSplashUpdateBusy = false;
+    try {
+      if (mainWin && !mainWin.isDestroyed()) mainWin.show();
+    } catch {
+      /* ignore */
+    }
+    const msg = e && e.message ? String(e.message) : 'Не удалось открыть окно обновления';
+    return { ok: false, code: 'error', message: msg };
+  }
+  void runSplashUpdateFlow({ fastIntro: true });
+  return { ok: true, code: 'splash' };
+});
+
 /** Проверка + явная загрузка + диалог перезапуска (кнопка «Скачать обновление»). */
 ipcMain.handle('updates-download-install', async (event) => {
   const gate = await manualUpdaterDevGate();
   if (gate) return gate;
+  clearUpdaterListeners();
   configureAutoUpdaterFeed();
   applyAutoUpdaterDefaults();
 

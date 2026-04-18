@@ -943,6 +943,15 @@ function bindSettingsUpdates() {
   if (!btnCheck || !btnDl || !msg) return;
   if (typeof api.checkUpdatesOnly !== 'function' || typeof api.downloadUpdatesInstall !== 'function') return;
 
+  if (typeof api.onUpdatesFlowResumed === 'function') {
+    api.onUpdatesFlowResumed(() => {
+      clearProgress();
+      btnCheck.disabled = false;
+      btnDl.disabled = true;
+      setMsg('Готово.', '');
+    });
+  }
+
   /** @type {null | (() => void)} */
   let unsubProgress = null;
 
@@ -996,20 +1005,34 @@ function bindSettingsUpdates() {
 
   btnDl.addEventListener('click', async () => {
     clearProgress();
-    setMsg('Загрузка…', '');
+    setMsg('Открываем окно обновления…', '');
     btnDl.disabled = true;
     btnCheck.disabled = true;
-    if (typeof api.onSettingsUpdateDownloadProgress === 'function') {
-      unsubProgress = api.onSettingsUpdateDownloadProgress((p) => {
-        const pct = Math.round(Number(p && p.percent) || 0);
-        setMsg(`Загрузка ${pct}%`, '');
-      });
-    }
     try {
-      const r = await api.downloadUpdatesInstall();
+      let r =
+        typeof api.downloadUpdatesViaSplash === 'function'
+          ? await api.downloadUpdatesViaSplash()
+          : { ok: false, code: 'dev' };
+      if (r && r.code === 'dev') {
+        setMsg('Загрузка…', '');
+        if (typeof api.onSettingsUpdateDownloadProgress === 'function') {
+          unsubProgress = api.onSettingsUpdateDownloadProgress((p) => {
+            const pct = Math.round(Number(p && p.percent) || 0);
+            setMsg(`Загрузка ${pct}%`, '');
+          });
+        }
+        r = await api.downloadUpdatesInstall();
+      }
       if (!r || !r.ok) {
-        setMsg(r?.message || 'Не удалось скачать обновление', 'err');
+        if (r?.code === 'busy') {
+          setMsg(r.message || 'Подождите…', 'warn');
+        } else {
+          setMsg(r?.message || 'Не удалось начать обновление', 'err');
+        }
         btnDl.disabled = false;
+      } else if (r.code === 'splash') {
+        setMsg('Проверка и загрузка на экране запуска…', 'ok');
+        btnDl.disabled = true;
       } else if (r.code === 'uptodate') {
         setMsg(`Установлена последняя версия (${r.currentVersion || 'текущая'}).`, 'ok');
         btnDl.disabled = true;
@@ -1018,9 +1041,6 @@ function bindSettingsUpdates() {
         btnDl.disabled = true;
       } else if (r.code === 'downloaded') {
         setMsg(r.message || 'Обновление скачано.', 'ok');
-        btnDl.disabled = true;
-      } else if (r.code === 'dev') {
-        setMsg(r.message || 'Режим разработки', 'warn');
         btnDl.disabled = true;
       } else {
         setMsg(r.message || 'Готово', '');
