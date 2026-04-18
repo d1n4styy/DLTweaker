@@ -1,13 +1,13 @@
 {
-  "id": "qp-1.0.24-2",
+  "id": "qp-1.0.24.2-1",
   "minAppSemver": "1.0.8",
   "maxAppSemver": "99.99.99",
-  "description": "Исправление контрольной суммы overlay: манифест и GitHub в LF; применение нормализует CRLF для текстовых файлов.",
+  "description": "Журнал qp 1.0.24.2 (id qp-1.0.24.2-1) и overlay. Полный функционал (сплэш при каждом запуске, выход процесса) — установите приложение 1.0.25.",
   "assets": [
     {
       "path": "overlay.css",
       "url": "https://raw.githubusercontent.com/d1n4styy/DLTweaker/main/quick-patch/overlay.css",
-      "sha256": "3647bf106697ce398b12b27bbd1e44695dc81248539a56d7c9c8888051dc7da8"
+      "sha256": "a792e610fafedc62a868edf6acdf6d7ff928fd387964ab922540a00c25cc02d4"
     }
   ]
 }

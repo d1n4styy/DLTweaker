@@ -12,6 +12,10 @@ const PROFILES_FILE = 'profiles.json';
 
 let splashWin = null;
 let mainWin = null;
+/** Закрытие сплэша из кода (не считать «отменой» и не гасить процесс). */
+let splashProgrammaticClose = false;
+/** Пользователь закрыл сплэш — не открывать main после фоновой проверки. */
+let splashUserAborted = false;
 /** Защита от повторного «Скачать через сплэш», пока не вернулись в main. */
 let settingsSplashUpdateBusy = false;
 /** Сплэш не закрываем до первой отрисовки основного окна (см. createMainWindow). */
@@ -43,13 +47,38 @@ function sendSplashStatus(payload) {
   }
 }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+function closeSplashProgrammatically() {
+  if (!splashWin || splashWin.isDestroyed()) return;
+  splashProgrammaticClose = true;
+  try {
+    splashWin.close();
+  } catch {
+    /* ignore */
+  } finally {
+    splashProgrammaticClose = false;
+  }
 }
 
-/** NSIS passes `--updated` when launching the app after an update (see electron-builder `StartApp` macro). */
-function isRelaunchAfterNsisUpdate() {
-  return process.argv.some((a) => a === '--updated' || /^--updated=/i.test(a));
+/** Уничтожить старый сплэш перед созданием нового (например, из настроек). */
+function destroySplashForReuse() {
+  if (!splashWin || splashWin.isDestroyed()) return;
+  splashProgrammaticClose = true;
+  try {
+    splashWin.destroy();
+  } catch {
+    try {
+      splashWin.close();
+    } catch {
+      /* ignore */
+    }
+  } finally {
+    splashProgrammaticClose = false;
+  }
+  splashWin = null;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 async function windowsImageRunning(exeName) {
@@ -315,16 +344,7 @@ function setupMainWindowSizing(win) {
 
 function createSplashWindow() {
   if (splashWin && !splashWin.isDestroyed()) {
-    try {
-      splashWin.destroy();
-    } catch {
-      try {
-        splashWin.close();
-      } catch {
-        /* ignore */
-      }
-    }
-    splashWin = null;
+    destroySplashForReuse();
   }
   splashWin = new BrowserWindow({
     useContentSize: true,
@@ -351,8 +371,39 @@ function createSplashWindow() {
       nodeIntegration: false,
     },
   });
+  const splashRef = splashWin;
   splashWin.on('closed', () => {
-    splashWin = null;
+    if (splashWin === splashRef) splashWin = null;
+  });
+  splashWin.on('close', () => {
+    if (splashProgrammaticClose) return;
+    if (splashWin !== splashRef) return;
+    splashUserAborted = true;
+    clearUpdaterListeners();
+    if (!mainWin || mainWin.isDestroyed()) {
+      setImmediate(() => {
+        try {
+          app.quit();
+        } catch {
+          /* ignore */
+        }
+      });
+      return;
+    }
+    if (!mainWin.isVisible()) {
+      try {
+        mainWin.destroy();
+      } catch {
+        /* ignore */
+      }
+      setImmediate(() => {
+        try {
+          if (BrowserWindow.getAllWindows().length === 0) app.quit();
+        } catch {
+          /* ignore */
+        }
+      });
+    }
   });
   splashWin.once('ready-to-show', () => {
     if (!splashWin || splashWin.isDestroyed()) return;
@@ -368,8 +419,9 @@ function createSplashWindow() {
 }
 
 function createMainWindow() {
+  if (splashUserAborted) return;
   if (mainWin && !mainWin.isDestroyed()) {
-    if (splashWin && !splashWin.isDestroyed()) splashWin.close();
+    if (splashWin && !splashWin.isDestroyed()) closeSplashProgrammatically();
     return;
   }
   mainWinSplashCloseScheduled = false;
@@ -421,7 +473,7 @@ function createMainWindow() {
       mainWinSplashCloseScheduled = true;
       setTimeout(() => {
         if (splashWin && !splashWin.isDestroyed()) {
-          splashWin.close();
+          closeSplashProgrammatically();
         }
       }, 100);
     }
@@ -434,21 +486,51 @@ function createMainWindow() {
   mainWin.on('closed', () => {
     mainWin = null;
     mainWinSplashCloseScheduled = false;
+    if (splashWin && !splashWin.isDestroyed()) {
+      closeSplashProgrammatically();
+    }
   });
 }
 
+/**
+ * Дождаться загрузки splash.html. Нельзя полагаться на `!isLoading()` сразу после `loadFile()` —
+ * на короткое время URL ещё `about:blank`, обработчик IPC в рендерере не подписан, и ранний
+ * `sendSplashStatus` теряется (на экране вечно «Подготовка…»).
+ */
 async function waitForSplashLoad() {
-  return new Promise((resolve) => {
-    if (!splashWin || splashWin.isDestroyed()) {
-      resolve();
-      return;
+  if (!splashWin || splashWin.isDestroyed()) return;
+  const wc = splashWin.webContents;
+
+  const splashLoaded = () => {
+    try {
+      const u = wc.getURL() || '';
+      return !wc.isLoading() && u.includes('splash.html');
+    } catch {
+      return false;
     }
-    if (!splashWin.webContents.isLoading()) {
-      resolve();
-      return;
-    }
-    splashWin.webContents.once('did-finish-load', resolve);
-  });
+  };
+
+  if (splashLoaded()) return;
+
+  await Promise.race([
+    new Promise((resolve) => {
+      const cleanup = () => {
+        wc.removeListener('did-finish-load', onOk);
+        wc.removeListener('did-fail-load', onFail);
+      };
+      const onOk = () => {
+        cleanup();
+        resolve();
+      };
+      const onFail = () => {
+        cleanup();
+        resolve();
+      };
+      wc.once('did-finish-load', onOk);
+      wc.once('did-fail-load', onFail);
+    }),
+    new Promise((resolve) => setTimeout(resolve, 25_000)),
+  ]);
 }
 
 function notifyUpdatesFlowResumedMain() {
@@ -462,8 +544,9 @@ function notifyUpdatesFlowResumedMain() {
 
 async function openMainAfterSplash(fastResume = false) {
   settingsSplashUpdateBusy = false;
+  if (splashUserAborted) return;
   if (mainWin && !mainWin.isDestroyed()) {
-    if (splashWin && !splashWin.isDestroyed()) splashWin.close();
+    if (splashWin && !splashWin.isDestroyed()) closeSplashProgrammatically();
     try {
       mainWin.show();
       mainWin.focus();
@@ -475,6 +558,7 @@ async function openMainAfterSplash(fastResume = false) {
   }
   sendSplashStatus({ phase: 'launching', message: 'Запуск приложения…' });
   await sleep(fastResume ? 120 : 280);
+  if (splashUserAborted) return;
   createMainWindow();
 }
 
@@ -483,7 +567,10 @@ async function runSplashUpdateFlow(opts = {}) {
   const fast = opts.fastIntro === true;
   clearUpdaterListeners();
   await waitForSplashLoad();
-  await sleep(fast ? 0 : 50);
+  if (splashUserAborted || !splashWin || splashWin.isDestroyed()) return;
+  /** Дать preload + splash-renderer зарегистрировать `splash-status`, иначе первые IPC теряются. */
+  await sleep(fast ? 48 : 80);
+  if (splashUserAborted || !splashWin || splashWin.isDestroyed()) return;
   bringSplashToFront();
 
   sendSplashStatus({ phase: 'checking', message: 'Проверка обновлений…' });
@@ -535,6 +622,7 @@ async function runSplashUpdateFlow(opts = {}) {
   };
 
   const goMain = async () => {
+    if (splashUserAborted) return;
     if (settled) return;
     settled = true;
     done();
@@ -615,6 +703,7 @@ async function runSplashUpdateFlow(opts = {}) {
   });
 
   try {
+    if (splashUserAborted || !splashWin || splashWin.isDestroyed()) return;
     await checkForUpdatesWithFeedFallback();
   } catch (err) {
     if (!settled) {
@@ -637,11 +726,8 @@ async function runSplashUpdateFlow(opts = {}) {
 }
 
 function startSplashThenMain() {
-  /** После NSIS второй запуск с --updated: без второго сплэша — сразу главное окно (меньше миганий). */
-  if (app.isPackaged && isRelaunchAfterNsisUpdate()) {
-    createMainWindow();
-    return;
-  }
+  splashUserAborted = false;
+  settingsSplashUpdateBusy = false;
   createSplashWindow();
   void runSplashUpdateFlow();
 }
@@ -665,6 +751,9 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    if (process.platform !== 'darwin') {
+      app.setQuitOnLastWindowClosed(true);
+    }
     if (MAIN_WIN_NATIVE_FRAME) {
       try {
         Menu.setApplicationMenu(null);
@@ -676,7 +765,13 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform !== 'darwin') {
+      try {
+        app.quit();
+      } catch {
+        /* ignore */
+      }
+    }
   });
 
   app.on('activate', () => {
