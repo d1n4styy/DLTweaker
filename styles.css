@@ -186,6 +186,16 @@ body {
   flex-direction: column;
   height: 100vh;
   background: transparent;
+  -webkit-app-region: no-drag;
+}
+
+/* Windows: системный caption — свой titlebar скрыт (класс ставит renderer.js). */
+html.dl-native-win-frame .titlebar {
+  display: none !important;
+}
+
+html.dl-native-win-frame .main-atmosphere {
+  top: 0;
 }
 
 /* Title bar */
@@ -197,7 +207,6 @@ body {
   background: var(--titlebar-bg);
   border-bottom: 1px solid var(--card-border);
   flex-shrink: 0;
-  -webkit-app-region: drag;
 }
 
 .titlebar-drag {
@@ -206,6 +215,7 @@ body {
   display: flex;
   align-items: center;
   min-width: 0;
+  -webkit-app-region: drag;
 }
 
 .titlebar-title {
@@ -251,6 +261,7 @@ body {
   display: flex;
   flex: 1;
   min-height: 0;
+  -webkit-app-region: no-drag;
 }
 
 .sidebar {
@@ -423,6 +434,7 @@ html[data-theme='light'] .game-status-pill--off {
   flex-direction: column;
   padding: 24px 28px 28px;
   background: radial-gradient(1200px 600px at 80% -10%, var(--main-shine), transparent 55%), var(--main-overlay);
+  -webkit-app-region: no-drag;
 }
 
 /* Animated “tweaker lab” backdrop — only main column (not sidebar) */
@@ -658,6 +670,13 @@ html[data-theme='light'] .main-gear-wrap {
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view:not(.hidden) {
+    scroll-behavior: auto;
+  }
 }
 
 .view-settings:not(.hidden) {
@@ -1386,13 +1405,6 @@ html[data-theme='light'] .settings-update-kicker {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
-}
-
-.settings-quickpatch-desc {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
   color: var(--muted);
 }
 

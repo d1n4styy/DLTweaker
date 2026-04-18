@@ -1,6 +1,6 @@
 {
   "name": "deadlock-tweaker",
-  "version": "1.0.11",
+  "version": "1.0.18",
   "description": "Deadlock Tweaker — Electron UI",
   "author": "DLTweaker",
   "main": "main.js",
@@ -21,7 +21,9 @@
     "desktop-link": "powershell -NoProfile -ExecutionPolicy Bypass -File \"scripts/create-desktop-shortcut.ps1\"",
     "predev": "npm run desktop-link",
     "prestart": "npm run desktop-link",
-    "dist:desktop": "npm run dist && node scripts/copy-installer-to-desktop.js"
+    "dist:desktop": "npm run dist && node scripts/copy-installer-to-desktop.js",
+    "splash:preview": "node ./node_modules/electron/cli.js scripts/splash-preview.cjs",
+    "bundle:sources": "node scripts/create-project-bundle.cjs"
   },
   "build": {
     "appId": "com.dlts.deadlocktweaker",
