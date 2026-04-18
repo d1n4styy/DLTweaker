@@ -460,7 +460,16 @@
               <div class="settings-col-right">
                 <article class="card updates-changelog-card">
                   <h2 class="card-title">Что нового</h2>
-                  <p class="updates-changelog-intro">GitHub + локальные заметки к тегам, если в релизе нет текста.</p>
+                  <p class="updates-changelog-intro">
+                    Релизы с GitHub и локальные заметки; отдельно — журнал quick-patch из комплекта приложения.
+                  </p>
+                  <div class="updates-changelog-toolbar">
+                    <label class="updates-changelog-kind-label" for="updates-changelog-kind">Показать</label>
+                    <select id="updates-changelog-kind" class="select updates-changelog-select" aria-label="Тип списка">
+                      <option value="updates">Обновления (релизы)</option>
+                      <option value="quickpatch">Quick-patch</option>
+                    </select>
+                  </div>
                   <div class="updates-changelog-list" id="updates-changelog-list" role="list"></div>
                   <p class="updates-changelog-foot" id="updates-changelog-status" aria-live="polite"></p>
                 </article>

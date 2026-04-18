@@ -515,6 +515,9 @@ function bindNav() {
 
 let updatesChangelogLoaded = false;
 let updatesChangelogLoading = false;
+/** @type {{ updateItems: unknown[]; quickPatchItems: unknown[] } | null} */
+let updatesChangelogCache = null;
+let updatesChangelogKindBound = false;
 
 function formatReleaseDateRu(iso) {
   if (!iso) return '';
@@ -541,15 +544,92 @@ function simplifyReleaseBody(raw) {
   return s.trim();
 }
 
+function bindUpdatesChangelogKindOnce() {
+  if (updatesChangelogKindBound) return;
+  const sel = document.getElementById('updates-changelog-kind');
+  if (!sel) return;
+  updatesChangelogKindBound = true;
+  sel.addEventListener('change', () => {
+    if (!updatesChangelogCache) return;
+    renderUpdatesChangelogList(updatesChangelogCache, sel.value);
+  });
+}
+
+function renderUpdatesChangelogList(cache, kind) {
+  const listEl = document.getElementById('updates-changelog-list');
+  const statusEl = document.getElementById('updates-changelog-status');
+  const api = window.electronAPI;
+  if (!listEl || !statusEl || !cache) return;
+
+  const items = kind === 'quickpatch' ? cache.quickPatchItems : cache.updateItems;
+  const arr = Array.isArray(items) ? items : [];
+
+  listEl.textContent = '';
+  statusEl.className = 'updates-changelog-foot';
+
+  if (arr.length === 0) {
+    statusEl.textContent =
+      kind === 'quickpatch' ? 'Нет записей quick-patch в комплекте приложения.' : 'Пока нет опубликованных релизов.';
+    return;
+  }
+
+  statusEl.textContent = '';
+
+  arr.forEach((it) => {
+    const article = document.createElement('article');
+    article.className = 'updates-changelog-item';
+    article.setAttribute('role', 'listitem');
+
+    const head = document.createElement('div');
+    head.className = 'updates-changelog-head';
+
+    const h = document.createElement('h3');
+    h.className = 'updates-changelog-title';
+    const title = (it.name && String(it.name).trim()) || (it.tag && String(it.tag).trim()) || 'Запись';
+    h.textContent = title;
+
+    const meta = document.createElement('p');
+    meta.className = 'updates-changelog-meta';
+    const parts = [it.tag && String(it.tag).trim(), formatReleaseDateRu(it.publishedAt)].filter(Boolean);
+    meta.textContent = parts.join(' · ');
+
+    head.append(h, meta);
+
+    const body = document.createElement('p');
+    body.className = 'updates-changelog-body';
+    const btxt = simplifyReleaseBody(it.body);
+    body.textContent = btxt || 'Нет описания.';
+
+    article.append(head, body);
+
+    if (it.url && typeof api.openExternalGithub === 'function') {
+      const row = document.createElement('div');
+      row.className = 'updates-changelog-link';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-ghost btn-sm';
+      b.textContent = kind === 'quickpatch' ? 'Папка quick-patch на GitHub' : 'Открыть на GitHub';
+      b.addEventListener('click', () => {
+        void api.openExternalGithub(it.url);
+      });
+      row.append(b);
+      article.append(row);
+    }
+
+    listEl.append(article);
+  });
+}
+
 async function loadUpdatesChangelog() {
   const listEl = document.getElementById('updates-changelog-list');
   const statusEl = document.getElementById('updates-changelog-status');
+  const sel = document.getElementById('updates-changelog-kind');
   const api = window.electronAPI;
   if (!listEl || !statusEl || !api || typeof api.fetchReleaseNotes !== 'function') return;
   if (updatesChangelogLoading || updatesChangelogLoaded) return;
 
   updatesChangelogLoading = true;
-  statusEl.textContent = 'Загрузка списка релизов…';
+  statusEl.textContent = 'Загрузка списка…';
   statusEl.className = 'updates-changelog-foot';
 
   try {
@@ -561,60 +641,14 @@ async function loadUpdatesChangelog() {
       return;
     }
 
-    listEl.textContent = '';
-    const items = Array.isArray(res.items) ? res.items : [];
-    if (items.length === 0) {
-      statusEl.textContent = 'Пока нет опубликованных релизов.';
-      updatesChangelogLoaded = true;
-      updatesChangelogLoading = false;
-      return;
-    }
+    const updateItems = Array.isArray(res.items) ? res.items : [];
+    const quickPatchItems = Array.isArray(res.quickPatchItems) ? res.quickPatchItems : [];
+    updatesChangelogCache = { updateItems, quickPatchItems };
 
-    items.forEach((it) => {
-      const article = document.createElement('article');
-      article.className = 'updates-changelog-item';
-      article.setAttribute('role', 'listitem');
+    bindUpdatesChangelogKindOnce();
+    const kind = sel && sel.value ? sel.value : 'updates';
+    renderUpdatesChangelogList(updatesChangelogCache, kind);
 
-      const head = document.createElement('div');
-      head.className = 'updates-changelog-head';
-
-      const h = document.createElement('h3');
-      h.className = 'updates-changelog-title';
-      const title = (it.name && String(it.name).trim()) || (it.tag && String(it.tag).trim()) || 'Релиз';
-      h.textContent = title;
-
-      const meta = document.createElement('p');
-      meta.className = 'updates-changelog-meta';
-      const parts = [it.tag && String(it.tag).trim(), formatReleaseDateRu(it.publishedAt)].filter(Boolean);
-      meta.textContent = parts.join(' · ');
-
-      head.append(h, meta);
-
-      const body = document.createElement('p');
-      body.className = 'updates-changelog-body';
-      const btxt = simplifyReleaseBody(it.body);
-      body.textContent = btxt || 'Нет описания для этого релиза.';
-
-      article.append(head, body);
-
-      if (it.url && typeof api.openExternalGithub === 'function') {
-        const row = document.createElement('div');
-        row.className = 'updates-changelog-link';
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'btn btn-ghost btn-sm';
-        b.textContent = 'Открыть на GitHub';
-        b.addEventListener('click', () => {
-          void api.openExternalGithub(it.url);
-        });
-        row.append(b);
-        article.append(row);
-      }
-
-      listEl.append(article);
-    });
-
-    statusEl.textContent = '';
     updatesChangelogLoaded = true;
   } catch (e) {
     statusEl.classList.add('is-error');

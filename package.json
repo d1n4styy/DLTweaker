@@ -1,6 +1,6 @@
 {
   "name": "deadlock-tweaker",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "description": "Deadlock Tweaker — Electron UI",
   "author": "DLTweaker",
   "main": "main.js",
@@ -45,6 +45,7 @@
       "splash-renderer.js",
       "splash-preload.js",
       "release-notes.json",
+      "quick-patch-changelog.json",
       "assets/**/*",
       "Screens/**/*"
     ],

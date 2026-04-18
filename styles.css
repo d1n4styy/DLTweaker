@@ -1391,9 +1391,28 @@ html[data-theme='light'] .settings-update-kicker {
 }
 
 .updates-changelog-intro {
-  margin: -4px 0 14px;
+  margin: -4px 0 10px;
   font-size: 13px;
   color: var(--muted);
+}
+
+.updates-changelog-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+}
+
+.updates-changelog-kind-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.select.updates-changelog-select {
+  min-width: 200px;
+  max-width: 100%;
 }
 
 .updates-changelog-card {

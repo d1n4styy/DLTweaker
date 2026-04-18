@@ -127,6 +127,27 @@ async function getBundledReleaseNotesMap() {
   return cachedBundledReleaseNotes;
 }
 
+/** Записи quick-patch для вкладки «Что нового» (файл в сборке). */
+let cachedQuickPatchChangelog = undefined;
+
+async function getQuickPatchChangelogList() {
+  if (cachedQuickPatchChangelog !== undefined) return cachedQuickPatchChangelog;
+  try {
+    const raw = await fs.readFile(path.join(__dirname, 'quick-patch-changelog.json'), 'utf8');
+    const j = JSON.parse(raw);
+    if (Array.isArray(j)) {
+      cachedQuickPatchChangelog = j;
+    } else if (j && typeof j === 'object' && Array.isArray(j.items)) {
+      cachedQuickPatchChangelog = j.items;
+    } else {
+      cachedQuickPatchChangelog = [];
+    }
+  } catch {
+    cachedQuickPatchChangelog = [];
+  }
+  return cachedQuickPatchChangelog;
+}
+
 /** Generic `latest/download` — прямой `latest.yml` последнего релиза (надёжнее, чем GitHub-провайдер). */
 const GENERIC_UPDATE_FEED_BASE = 'https://github.com/d1n4styy/DLTweaker/releases/latest/download/';
 
@@ -456,16 +477,14 @@ async function runSplashUpdateFlow(opts = {}) {
       percent: 100,
       downloadedTotal: lastUpdateDownloadTotal || undefined,
     });
-    bringSplashToFront();
-    /** Кадр на отрисовку статуса, затем тихий NSIS (isSilent → /S) + перезапуск. */
+    /** Без повторного «подъёма» окна — меньше мигания; sendSplashStatus уже вызывает bringSplashToFront. */
     setTimeout(() => {
       try {
-        bringSplashToFront();
         autoUpdater.quitAndInstall(true, true);
       } catch {
         void openMainAfterSplash(fast);
       }
-    }, 380);
+    }, 200);
   };
 
   addUpdaterListener('update-available', (info) => {
@@ -685,7 +704,24 @@ ipcMain.handle('updates-release-notes', async () => {
         url: typeof r.html_url === 'string' ? r.html_url : '',
       };
     });
-    return { ok: true, items };
+    const qpTree = 'https://github.com/d1n4styy/DLTweaker/tree/main/quick-patch';
+    const qpRows = await getQuickPatchChangelogList();
+    const quickPatchItems = qpRows.map((row) => {
+      const id = row && row.id != null ? String(row.id).trim() : '';
+      const description =
+        row && row.description != null
+          ? String(row.description).trim()
+          : String((row && row.body) || '').trim();
+      const date = row && row.date != null ? String(row.date).trim() : '';
+      return {
+        tag: id ? `qp:${id}` : 'qp',
+        name: id ? `Quick-patch · ${id}` : 'Quick-patch',
+        publishedAt: date,
+        body: description,
+        url: qpTree,
+      };
+    });
+    return { ok: true, items, quickPatchItems };
   } catch (err) {
     const message = err && err.message ? String(err.message) : 'Запрос не выполнен';
     return { ok: false, message };
