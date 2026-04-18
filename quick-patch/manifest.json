@@ -1,13 +1,13 @@
 {
-  "id": "qp-1.0.24-1",
+  "id": "qp-1.0.24-2",
   "minAppSemver": "1.0.8",
   "maxAppSemver": "99.99.99",
-  "description": "Полный патч релиза 1.0.24: overlay + манифест для канала quick-patch. Установите 1.0.24 через «Обновления» для правок updater/настроек в коде.",
+  "description": "Исправление контрольной суммы overlay: манифест и GitHub в LF; применение нормализует CRLF для текстовых файлов.",
   "assets": [
     {
       "path": "overlay.css",
       "url": "https://raw.githubusercontent.com/d1n4styy/DLTweaker/main/quick-patch/overlay.css",
-      "sha256": "efe2485f04a56a63f080b60de8edd7634fe66f0162ac577d299770b7e6d477e9"
+      "sha256": "3647bf106697ce398b12b27bbd1e44695dc81248539a56d7c9c8888051dc7da8"
     }
   ]
 }

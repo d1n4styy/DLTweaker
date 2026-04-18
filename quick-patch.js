@@ -54,6 +54,19 @@ async function sha256Buffer(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
+/** LF как у raw.githubusercontent.com; манифест часто считают на Windows с CRLF — иначе ложное «не сошлась сумма». */
+function normalizeTextAssetBytes(buf, filename) {
+  if (!filename || !/\.(css|json|html?|md|txt|yml|yaml)$/i.test(filename)) {
+    return buf;
+  }
+  try {
+    const t = buf.toString('utf8');
+    return Buffer.from(t.replace(/\r\n/g, '\n').replace(/\r/g, '\n'), 'utf8');
+  } catch {
+    return buf;
+  }
+}
+
 async function loadState(root) {
   try {
     const raw = await fs.readFile(path.join(root, 'state.json'), 'utf8');
@@ -247,12 +260,17 @@ async function applyQuickPatch(app, opts) {
     if (!url || !rel || !allowedAssetUrl(url)) {
       return { ok: false, code: 'bad', message: 'Недопустимый URL или имя файла' };
     }
-    const buf = await fetchAsset(url, maxAsset);
+    let buf = await fetchAsset(url, maxAsset);
+    buf = normalizeTextAssetBytes(buf, rel);
     if (a.sha256) {
       const want = String(a.sha256).toLowerCase();
       const got = await sha256Buffer(buf);
       if (want !== got) {
-        return { ok: false, code: 'hash', message: 'Не сошлась контрольная сумма' };
+        return {
+          ok: false,
+          code: 'hash',
+          message: 'Не сошлась контрольная сумма загруженного файла.',
+        };
       }
     }
     await fs.writeFile(path.join(activeDir, rel), buf);

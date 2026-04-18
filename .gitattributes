@@ -1,0 +1,2 @@
+# quick-patch и манифест должны совпадать с raw.githubusercontent.com (LF)
+quick-patch/** text eol=lf
