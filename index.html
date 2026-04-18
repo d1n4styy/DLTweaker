@@ -458,7 +458,7 @@
                   <div class="settings-quickpatch" aria-labelledby="settings-quickpatch-label">
                     <div class="settings-quickpatch-head" id="settings-quickpatch-label">Быстрые патчи</div>
                     <p class="settings-quickpatch-desc">
-                      Мелкие правки (CSS и др.) с репозитория — килобайты вместо полного установщика. Смена логики окна или версии Electron — только полный NSIS.
+                      Полный установщик NSIS при обновлении может подгружаться по дельте (blockmap), но строка «МБ из МБ» — размер файла; мелкие правки интерфейса выгоднее выкатывать через быстрые патчи (несколько CSS/файлов с GitHub). Смена Electron, main или preload — только полный установщик.
                     </p>
                     <button type="button" class="btn btn-ghost btn-sm" id="settings-quickpatch-btn">Проверить патч</button>
                     <p class="settings-quickpatch-status" id="settings-quickpatch-status" role="status" aria-live="polite"></p>
@@ -467,10 +467,12 @@
               </div>
               <div class="settings-col-right">
                 <article class="card updates-changelog-card">
-                  <h2 class="card-title">Что нового</h2>
-                  <p class="updates-changelog-intro">GitHub + локальные заметки к тегам, если в релизе нет текста.</p>
-                  <div class="updates-changelog-list" id="updates-changelog-list" role="list"></div>
-                  <p class="updates-changelog-foot" id="updates-changelog-status" aria-live="polite"></p>
+                  <div class="updates-changelog-inner">
+                    <h2 class="card-title">Что нового</h2>
+                    <p class="updates-changelog-intro">GitHub + локальные заметки к тегам, если в релизе нет текста.</p>
+                    <div class="updates-changelog-list" id="updates-changelog-list" role="list"></div>
+                    <p class="updates-changelog-foot" id="updates-changelog-status" aria-live="polite"></p>
+                  </div>
                 </article>
               </div>
             </div>

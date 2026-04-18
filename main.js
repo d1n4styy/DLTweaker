@@ -172,8 +172,8 @@ function applyAutoUpdaterDefaults() {
 
 function createSplashWindow() {
   splashWin = new BrowserWindow({
-    width: 440,
-    height: 400,
+    width: 520,
+    height: 500,
     frame: false,
     resizable: false,
     minimizable: false,

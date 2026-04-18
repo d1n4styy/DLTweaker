@@ -72,25 +72,26 @@ body {
 
 .splash-logo {
   display: block;
-  width: min(100%, 420px);
+  width: min(100%, 640px);
   height: auto;
-  max-height: min(220px, 52vh);
+  max-height: min(320px, 62vh);
   margin: 0;
   object-fit: contain;
   object-position: center;
+  image-rendering: auto;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   filter: drop-shadow(0 0 10px rgba(162, 255, 0, 0.14)) drop-shadow(0 0 22px rgba(162, 255, 0, 0.06));
-  animation: logo-breathe 2.4s ease-in-out infinite;
+  animation: logo-breathe 2.8s ease-in-out infinite;
 }
 
 @keyframes logo-breathe {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
   }
   50% {
-    opacity: 0.92;
-    transform: scale(1.02);
+    opacity: 0.9;
   }
 }
 
@@ -123,7 +124,7 @@ body {
 
 .progress-wrap {
   width: 100%;
-  max-width: min(100%, 340px);
+  max-width: min(100%, 400px);
   margin-top: 2px;
 }
 

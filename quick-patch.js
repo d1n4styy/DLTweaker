@@ -186,13 +186,17 @@ async function applyQuickPatch(app, opts) {
 }
 
 async function readOverlayCss(app) {
-  const userData = app.getPath('userData');
-  const p = path.join(quickPatchRoot(userData), 'active', 'overlay.css');
+  const dir = path.join(quickPatchRoot(app.getPath('userData')), 'active');
+  let names;
   try {
-    return await fs.readFile(p, 'utf8');
+    names = await fs.readdir(dir);
   } catch {
     return null;
   }
+  const cssNames = names.filter((f) => f.endsWith('.css')).sort();
+  if (cssNames.length === 0) return null;
+  const parts = await Promise.all(cssNames.map((f) => fs.readFile(path.join(dir, f), 'utf8')));
+  return parts.join('\n\n');
 }
 
 module.exports = {
