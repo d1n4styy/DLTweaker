@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deadlock Tweaker</title>
+    <link rel="stylesheet" href="splash.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <div class="logo-wrap">
+        <img class="logo" src="assets/logo.png" alt="" width="360" height="360" draggable="false" />
+      </div>
+      <h1 class="title">Deadlock <span class="accent">Tweaker</span></h1>
+      <p class="status-line" id="splash-line">Подготовка…</p>
+      <p class="status-sub" id="splash-sub"></p>
+      <div class="progress-wrap" id="splash-progress-wrap" hidden>
+        <div class="progress">
+          <div class="progress-fill" id="splash-progress-fill"></div>
+        </div>
+      </div>
+      <div class="spinner-row" aria-hidden="true">
+        <div class="spinner"></div>
+      </div>
+    </div>
+    <script src="splash-renderer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,73 @@
+{
+  "name": "deadlock-tweaker",
+  "version": "1.0.0",
+  "description": "Deadlock Tweaker — Electron UI",
+  "author": "DLTweaker",
+  "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/d1n4styy/DLTweaker.git"
+  },
+  "scripts": {
+    "start": "electronmon .",
+    "dev": "electronmon .",
+    "start:once": "electron .",
+    "dist": "electron-builder --win --publish never",
+    "dist:publish": "electron-builder --win --publish always",
+    "dist:itch": "node scripts/build-with-itch-url.cjs",
+    "itch:prepare-upload": "node scripts/prepare-itch-upload.cjs",
+    "itch:push": "node scripts/itch-push.cjs",
+    "itch:release": "npm run dist:itch && npm run itch:prepare-upload",
+    "desktop-link": "powershell -NoProfile -ExecutionPolicy Bypass -File \"scripts/create-desktop-shortcut.ps1\"",
+    "predev": "npm run desktop-link",
+    "prestart": "npm run desktop-link",
+    "dist:desktop": "npm run dist && node scripts/copy-installer-to-desktop.js"
+  },
+  "build": {
+    "appId": "com.dlts.deadlocktweaker",
+    "productName": "Deadlock Tweaker",
+    "directories": {
+      "output": "dist"
+    },
+    "compression": "normal",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "styles.css",
+      "renderer.js",
+      "splash.html",
+      "splash.css",
+      "splash-renderer.js",
+      "splash-preload.js",
+      "assets/**/*",
+      "Screens/**/*"
+    ],
+    "win": {
+      "icon": "assets/logo.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": ["github"]
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "electronmon": "^2.0.3"
+  }
+}

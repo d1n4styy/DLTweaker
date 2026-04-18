@@ -1,0 +1,4 @@
+# Copy to dev-app-update.yml (gitignored) to test electron-updater from `npm run dev`.
+# `url` must be the HTTPS directory that contains latest.yml (same as ITCH_UPDATE_BASE_URL when building).
+provider: generic
+url: https://YOUR-HTTPS-UPDATE-BASE-URL/
