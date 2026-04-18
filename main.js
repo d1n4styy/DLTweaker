@@ -318,6 +318,14 @@ function createMainWindow() {
 
   setupMainWindowSizing(mainWin);
 
+  /* Windows + нативная рамка: кастомный .titlebar в DOM скрываем из main (не зависит от CSP/порядка renderer). */
+  if (MAIN_WIN_NATIVE_FRAME) {
+    mainWin.webContents.once('dom-ready', () => {
+      if (!mainWin || mainWin.isDestroyed()) return;
+      void mainWin.webContents.insertCSS('#titlebar{display:none!important}.main-atmosphere{top:0!important}');
+    });
+  }
+
   mainWin.once('ready-to-show', () => {
     if (!mainWin || mainWin.isDestroyed()) return;
     try {

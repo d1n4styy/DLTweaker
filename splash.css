@@ -132,10 +132,12 @@ body {
 
 .splash-logo {
   display: block;
-  width: auto;
+  width: 168px;
   max-width: 100%;
   height: auto;
-  /* Без 81vmin — в низком окне он давал потолок ниже, чем 100% героя; без HTML width/height — без раздувания окна */
+  aspect-ratio: 1;
+  object-fit: contain;
+  /* Явный блок — без HTML width/height у PNG не схлопывается в 0 до загрузки */
   max-height: min(196px, 100%);
   margin: -5px 0 0;
   object-fit: contain;
