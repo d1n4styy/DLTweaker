@@ -64,6 +64,10 @@
       {
         "provider": "generic",
         "url": "https://github.com/d1n4styy/DLTweaker/releases/latest/download/"
+      },
+      {
+        "provider": "github",
+        "releaseType": "release"
       }
     ]
   },
